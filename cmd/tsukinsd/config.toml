@@ -1,0 +1,12 @@
+[namenode]
+
+host = 'localhost'
+port = 15001
+
+[[storage]]
+host = 'localhost'
+port = 15002
+
+[[storage]]
+host = 'localhost'
+port = 15003
