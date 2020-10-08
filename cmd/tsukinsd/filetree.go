@@ -164,21 +164,21 @@ func (t *Tree) GetNodeByAddress(address string) (*Node, bool) {
 	return node, ok
 }
 
-func (t *Tree) CD(address string) error {
+func (t *Tree) CD(address string) (string, error) {
 	address, matched := CleanAddress(address)
 
 	if !matched {
-		return fmt.Errorf("wrong file name format")
+		return "", fmt.Errorf("wrong file name format")
 	}
 
 	exists, isDirectory := t.PathExists(address)
 
 	if !exists {
-		return fmt.Errorf("directory does not exist")
+		return "", fmt.Errorf("directory does not exist")
 	} else if !isDirectory {
-		return fmt.Errorf("not a directory")
+		return "", fmt.Errorf("not a directory")
 	}
-	return nil
+	return address, nil
 }
 
 func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {

@@ -6,13 +6,16 @@ import (
 )
 
 type Config struct {
-	Namenode namenode
+	Namenode Namenode
 	Storage  []storage
 }
 
-type namenode struct {
+type Namenode struct {
 	Host string
 	Port int
+	TreeUpdatePeriod int64
+	TreeLogName string
+	TreeGobName string
 }
 
 type storage struct {
