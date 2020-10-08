@@ -165,6 +165,20 @@ func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {
 	return nil
 }
 
+func (t *Tree) MoveFile(fileToMove string, moveTo string) error {
+	fileToMove = path.Clean(fileToMove)
+	moveTo = path.Clean(moveTo)
+	err := t.CopyFile(fileToMove, moveTo)
+
+	if err != nil {
+		return fmt.Errorf("impossible to move file, %e", err)
+	}
+
+	_ = t.RemoveFile(fileToMove)
+
+	return nil
+}
+
 
 func (t *Tree) PathExists(address string) (exists bool, isDirectory bool) {
 	address = path.Clean(address)
