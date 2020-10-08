@@ -108,6 +108,19 @@ func (t *Tree) CreateDirectory(address string) error {
 	return nil
 }
 
+func (t *Tree) RemoveDirectory(address string) error {
+	address = CleanAddress(address)
+	if !t.DirectoryExists(address) {
+		return fmt.Errorf("directory does not exist")
+	}
+
+	node, _ := t.GetNodeByAddress(address)
+	node.Removed = true // lazy removing; will be removed later
+	delete(t.Nodes, address)
+
+	return nil
+}
+
 func (t *Tree) GetNodeByAddress(address string) (*Node, bool) {
 	address = CleanAddress(address)
 	node, ok := t.Nodes[address]
@@ -202,13 +215,32 @@ func (t *Tree) LS(address string) ([]string, error) {
 
 func (t *Tree) PathExists(address string) (exists bool, isDirectory bool) {
 	address = CleanAddress(address)
-	_, ok := t.Nodes[address]
+	node, ok := t.Nodes[address]
+
 	if ok {
-		return ok && !t.Nodes[address].Removed, t.Nodes[address].IsDirectory
+		return ok && !t.Nodes[address].Removed && t.ParentsExist(node), t.Nodes[address].IsDirectory
 	}
 	return ok, false
 }
 
+func (t *Tree) ParentsExist(node *Node) bool {
+	if node.Address == "." {
+		return true
+	}
+
+	parent, _ := t.GetNodeByAddress(node.Parent)
+	if parent.Removed {
+		return false
+	}
+
+	result := t.ParentsExist(parent)
+
+	if result == false {
+		node.Removed = true
+	}
+
+	return result
+}
 func (t *Tree) FileExists(address string) bool {
 	exists, isDirectory := t.PathExists(address)
 
