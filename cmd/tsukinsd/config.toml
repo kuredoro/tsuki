@@ -3,6 +3,10 @@
 host = 'localhost'
 port = 15001
 
+treeUpdatePeriod = 10
+treeLogName = 'tree.log'
+treeGobName = 'tree.gob'
+
 [[storage]]
 host = 'localhost'
 port = 15002
