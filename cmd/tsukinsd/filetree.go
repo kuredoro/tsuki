@@ -126,21 +126,40 @@ func (t *Tree) CD(address string) error {
 	return nil
 }
 
-func (t *Tree) CopyFile(oldAddress string, newAddress string) error {
-	oldAddress = path.Clean(oldAddress)
-	newBase := path.Base(newAddress)
-	newAddress = path.Dir(newAddress)
-	exists, isDirectory := t.PathExists(oldAddress)
+func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {
+	fileToCopy = path.Clean(fileToCopy)
+	copyTo = path.Clean(copyTo)
 
-	if !exists {
+	var fullFilePath string
+
+	fileToCopyExists, fileToCopyIsDirectory := t.PathExists(fileToCopy)
+
+	if !fileToCopyExists {
 		return fmt.Errorf("file does not exist")
-	} else if isDirectory {
+	} else if fileToCopyIsDirectory {
 		return fmt.Errorf("cannot copy directory")
 	}
 
-	file := *t.Nodes[oldAddress]
-	file.Parent = newAddress
-	file.Address = path.Join(newAddress, newBase)
+	if t.DirectoryExists(copyTo) {
+		fullFilePath = path.Join(copyTo, path.Base(fileToCopy))
+	} else if t.FileExists(copyTo) {
+		return fmt.Errorf("the file already exists")
+	} else {
+		fullFilePath = copyTo
+	}
+
+	if t.FileExists(fullFilePath) {
+		return fmt.Errorf("the file already exists")
+	}
+
+	parentDir := t.Nodes[path.Dir(fullFilePath)]
+
+	copiedFile := *t.Nodes[fileToCopy]
+	copiedFile.Parent = parentDir.Address
+	copiedFile.Address = fullFilePath
+
+	t.Nodes[fullFilePath] = &copiedFile
+	parentDir.Childs = append(parentDir.Childs, &copiedFile)
 
 	return nil
 }
