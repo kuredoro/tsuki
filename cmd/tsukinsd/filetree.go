@@ -3,13 +3,18 @@ package main
 import (
 	"encoding/gob"
 	"fmt"
+	"log"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 )
 
 type Tree struct {
 	Nodes map[string]*Node
+	Version int64
+	Removed []*Node
+	Conf Namenode
 }
 
 
@@ -21,9 +26,9 @@ type Node struct {
 	Removed bool
 }
 
-func InitTree() *Tree {
+func InitTree(conf Namenode) *Tree {
 	root := &Node{Address: ".", IsDirectory: true, Childs: make([]*Node, 0), Parent: ""}
-	tree := &Tree{map[string]*Node{".": root}}
+	tree := &Tree{Nodes: map[string]*Node{".": root}, Conf: conf}
 
 	return tree
 }
@@ -33,7 +38,7 @@ func (t *Tree) String() string {
 }
 
 func (node *Node) String() string {
-	return fmt.Sprintf("Node{Address: %q, IsDirectory: %v, Childs: %v, Parent: %q}", node.Address, node.IsDirectory, node.Childs, node.Parent)
+	return fmt.Sprintf("Node{Address: %q, IsDirectory: %v, Childs: %v, Parent: %q, Removed: %v}", node.Address, node.IsDirectory, node.Childs, node.Parent, node.Removed)
 }
 
 func (t *Tree) CreateFile(fileName string) error {
@@ -67,6 +72,8 @@ func (t *Tree) CreateFile(fileName string) error {
 	dir.Childs = append(dir.Childs, newFile)
 	t.Nodes[fileName] = newFile
 
+	t.CommitUpdate("touch", fileName)
+
 	return nil
 }
 
@@ -85,7 +92,13 @@ func (t *Tree) RemoveFile(address string) error {
 	}
 
 	t.Nodes[address].Removed = true // lazy removing
+	t.Removed = append(t.Removed, t.Nodes[address])
+
 	delete(t.Nodes, address)
+
+	t.CommitUpdate("rmfile", address)
+
+
 	return nil
 }
 
@@ -119,6 +132,8 @@ func (t *Tree) CreateDirectory(address string) error {
 	dir.Childs = append(dir.Childs, newDir)
 	t.Nodes[address] = newDir
 
+	t.CommitUpdate("mkdir", address)
+
 	return nil
 }
 
@@ -134,13 +149,16 @@ func (t *Tree) RemoveDirectory(address string) error {
 
 	node, _ := t.GetNodeByAddress(address)
 	node.Removed = true // lazy removing; will be removed later
+	t.Removed = append(t.Removed, node)
 	delete(t.Nodes, address)
+
+	t.CommitUpdate("rmdir", address)
 
 	return nil
 }
 
 func (t *Tree) GetNodeByAddress(address string) (*Node, bool) {
-	address = CleanAddress(address)
+	address,_ = CleanAddress(address)
 	node, ok := t.Nodes[address]
 
 	return node, ok
@@ -201,6 +219,8 @@ func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {
 
 	t.Nodes[fullFilePath] = &copiedFile
 	parentDir.Childs = append(parentDir.Childs, &copiedFile)
+
+	t.CommitUpdate("copy", fileToCopy, copyTo)
 
 	return nil
 }
@@ -291,6 +311,12 @@ func (t *Tree) DirectoryExists(address string) bool {
 }
 
 
+func (t *Tree) ParentNode(node *Node) *Node {
+	parentNode, _ := t.GetNodeByAddress(node.Parent)
+	return parentNode
+}
+
+
 func (t *Tree) SaveTree(saveTo string) bool {
 	file, _ := os.Create(saveTo)
 	defer file.Close()
@@ -312,8 +338,53 @@ func LoadTree(openFrom string) *Tree {
 	return &tree
 }
 
+func (t *Tree) CommitUpdate(command string, args ...string) {
+	f, err := os.OpenFile(t.Conf.TreeLogName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Println(err)
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(fmt.Sprintf("%d\t%s\t%s\n", t.Version, command, strings.Join(args, "\t"))); err != nil {
+		log.Println(err)
+	}
+
+	t.Version += 1
+
+	if t.Version % 100 == t.Conf.TreeUpdatePeriod {
+		t.ClearRemoved()
+		t.SaveTree(t.Conf.TreeGobName)
+
+		os.Remove(t.Conf.TreeLogName)
+	}
+}
+
 func (t *Tree) PrintTreeStruct() {
 	PrintDir(0, t.Nodes["."])
+}
+
+func (t *Tree) ClearRemoved() {
+	for _, node := range t.Removed {
+		parent := t.ParentNode(node)
+
+		toRemoveInd := -1
+		for i, parentChild := range parent.Childs {
+			if parentChild.Address == node.Address {
+				toRemoveInd = i
+				break
+			}
+		}
+
+		if toRemoveInd >= 0 {
+			parent.Childs[toRemoveInd] = parent.Childs[len(parent.Childs)-1]
+			parent.Childs[len(parent.Childs)-1] = nil
+			parent.Childs = parent.Childs[:len(parent.Childs)-1]
+			// garbage collector should work here even for directories
+		}
+	}
+
+	// clear removed
+	t.Removed = nil
 }
 
 func PrintDir(depth int, dir *Node) {
