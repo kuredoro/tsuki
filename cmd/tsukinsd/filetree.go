@@ -21,7 +21,7 @@ type Node struct {
 	Removed bool
 }
 
-func initTree() *Tree {
+func InitTree() *Tree {
 	root := &Node{Address: ".", IsDirectory: true, Childs: make([]*Node, 0), Parent: ""}
 	tree := &Tree{map[string]*Node{".": root}}
 
