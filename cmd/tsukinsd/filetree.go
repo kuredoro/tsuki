@@ -37,7 +37,7 @@ func (node *Node) String() string {
 }
 
 func (t *Tree) CreateFile(fileName string) error {
-	fileName = path.Clean(fileName)
+	fileName = CleanAddress(fileName)
 
 	_, fileExists := t.Nodes[fileName]
 
@@ -67,7 +67,7 @@ func (t *Tree) CreateFile(fileName string) error {
 }
 
 func (t *Tree) RemoveFile(address string) error {
-	address = path.Clean(address)
+	address = CleanAddress(address)
 	exists, isDirectory := t.PathExists(address)
 	if !exists {
 		return fmt.Errorf("file does not exist")
@@ -81,7 +81,7 @@ func (t *Tree) RemoveFile(address string) error {
 }
 
 func (t *Tree) CreateDirectory(address string) error {
-	address = path.Clean(address)
+	address = CleanAddress(address)
 	exists, _ := t.PathExists(address)
 
 	if exists {
@@ -109,14 +109,14 @@ func (t *Tree) CreateDirectory(address string) error {
 }
 
 func (t *Tree) GetNodeByAddress(address string) (*Node, bool) {
-	address = path.Clean(address)
+	address = CleanAddress(address)
 	node, ok := t.Nodes[address]
 
 	return node, ok
 }
 
 func (t *Tree) CD(address string) error {
-	address = path.Clean(address)
+	address = CleanAddress(address)
 	exists, isDirectory := t.PathExists(address)
 
 	if !exists {
@@ -128,8 +128,8 @@ func (t *Tree) CD(address string) error {
 }
 
 func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {
-	fileToCopy = path.Clean(fileToCopy)
-	copyTo = path.Clean(copyTo)
+	fileToCopy = CleanAddress(fileToCopy)
+	copyTo = CleanAddress(copyTo)
 
 	var fullFilePath string
 
@@ -166,8 +166,8 @@ func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {
 }
 
 func (t *Tree) MoveFile(fileToMove string, moveTo string) error {
-	fileToMove = path.Clean(fileToMove)
-	moveTo = path.Clean(moveTo)
+	fileToMove = CleanAddress(fileToMove)
+	moveTo = CleanAddress(moveTo)
 	err := t.CopyFile(fileToMove, moveTo)
 
 	if err != nil {
@@ -180,7 +180,7 @@ func (t *Tree) MoveFile(fileToMove string, moveTo string) error {
 }
 
 func (t *Tree) LS(address string) ([]string, error) {
-	address = path.Clean(address)
+	address = CleanAddress(address)
 	if !t.DirectoryExists(address) {
 		return nil, fmt.Errorf("directory does not exist")
 	}
@@ -201,7 +201,7 @@ func (t *Tree) LS(address string) ([]string, error) {
 
 
 func (t *Tree) PathExists(address string) (exists bool, isDirectory bool) {
-	address = path.Clean(address)
+	address = CleanAddress(address)
 	_, ok := t.Nodes[address]
 	if ok {
 		return ok && !t.Nodes[address].Removed, t.Nodes[address].IsDirectory
@@ -250,7 +250,12 @@ func PrintDir(depth int, dir *Node) {
 	}
 }
 
+func CleanAddress(address string) string {
+	cleaned := path.Clean(address)
 
-// func LoadTree() *Tree {
-// 	tree := Tree()
-// }
+	if cleaned[0] == '/' {
+		cleaned = cleaned[1:]
+	}
+
+	return cleaned
+}
