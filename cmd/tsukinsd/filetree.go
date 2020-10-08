@@ -280,7 +280,7 @@ func (t *Tree) PrintTreeStruct() {
 }
 
 func PrintDir(depth int, dir *Node) {
-	fmt.Printf("d %s├── %s\n", strings.Repeat("│   ", depth), path.Base(dir.Address))
+	fmt.Printf("%s├── %s\n", strings.Repeat("│   ", depth), path.Base(dir.Address) + "/")
 	for _, c := range dir.Childs {
 		if c.Removed {
 			continue
@@ -289,7 +289,7 @@ func PrintDir(depth int, dir *Node) {
 		if c.IsDirectory {
 			PrintDir(depth + 1, c)
 		} else {
-			fmt.Printf("f %s├── %s\n", strings.Repeat("│   ", depth + 1), path.Base(c.Address))
+			fmt.Printf("%s├── %s\n", strings.Repeat("│   ", depth + 1), path.Base(c.Address))
 		}
 	}
 }
