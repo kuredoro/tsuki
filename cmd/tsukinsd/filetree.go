@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 )
 
 type Tree struct {
@@ -194,6 +195,25 @@ func (t *Tree) SaveTree(saveTo string) bool {
 
 	encoder.Encode(t)
 	return true
+}
+
+func (t *Tree) PrintTreeStruct() {
+	PrintDir(0, t.Nodes["."])
+}
+
+func PrintDir(depth int, dir *Node) {
+	fmt.Printf("d %s├── %s\n", strings.Repeat("│   ", depth), path.Base(dir.Address))
+	for _, c := range dir.Childs {
+		if c.Removed {
+			continue
+		}
+
+		if c.IsDirectory {
+			PrintDir(depth + 1, c)
+		} else {
+			fmt.Printf("f %s├── %s\n", strings.Repeat("│   ", depth + 1), path.Base(c.Address))
+		}
+	}
 }
 
 
