@@ -37,7 +37,11 @@ func (node *Node) String() string {
 }
 
 func (t *Tree) CreateFile(fileName string) error {
-	fileName = CleanAddress(fileName)
+	fileName, matched := CleanAddress(fileName)
+
+	if !matched {
+		return fmt.Errorf("wrong file name format")
+	}
 
 	_, fileExists := t.Nodes[fileName]
 
@@ -67,7 +71,12 @@ func (t *Tree) CreateFile(fileName string) error {
 }
 
 func (t *Tree) RemoveFile(address string) error {
-	address = CleanAddress(address)
+	address, matched := CleanAddress(address)
+
+	if !matched {
+		return fmt.Errorf("wrong file name format")
+	}
+
 	exists, isDirectory := t.PathExists(address)
 	if !exists {
 		return fmt.Errorf("file does not exist")
@@ -81,7 +90,12 @@ func (t *Tree) RemoveFile(address string) error {
 }
 
 func (t *Tree) CreateDirectory(address string) error {
-	address = CleanAddress(address)
+	address, matched := CleanAddress(address)
+
+	if !matched {
+		return fmt.Errorf("wrong file name format")
+	}
+
 	exists, _ := t.PathExists(address)
 
 	if exists {
@@ -109,7 +123,11 @@ func (t *Tree) CreateDirectory(address string) error {
 }
 
 func (t *Tree) RemoveDirectory(address string) error {
-	address = CleanAddress(address)
+	address, matched := CleanAddress(address)
+
+	if !matched {
+		return fmt.Errorf("wrong file name format")
+	}
 	if !t.DirectoryExists(address) {
 		return fmt.Errorf("directory does not exist")
 	}
@@ -129,7 +147,12 @@ func (t *Tree) GetNodeByAddress(address string) (*Node, bool) {
 }
 
 func (t *Tree) CD(address string) error {
-	address = CleanAddress(address)
+	address, matched := CleanAddress(address)
+
+	if !matched {
+		return fmt.Errorf("wrong file name format")
+	}
+
 	exists, isDirectory := t.PathExists(address)
 
 	if !exists {
@@ -141,8 +164,12 @@ func (t *Tree) CD(address string) error {
 }
 
 func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {
-	fileToCopy = CleanAddress(fileToCopy)
-	copyTo = CleanAddress(copyTo)
+	fileToCopy, fileToCopyMatched := CleanAddress(fileToCopy)
+	copyTo, copyToMatched := CleanAddress(copyTo)
+
+	if !fileToCopyMatched || !copyToMatched {
+		return fmt.Errorf("wrong file name format")
+	}
 
 	var fullFilePath string
 
@@ -179,8 +206,14 @@ func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {
 }
 
 func (t *Tree) MoveFile(fileToMove string, moveTo string) error {
-	fileToMove = CleanAddress(fileToMove)
-	moveTo = CleanAddress(moveTo)
+	fileToMove, fileToMoveMatched := CleanAddress(fileToMove)
+	moveTo, moveToMatched := CleanAddress(moveTo)
+
+	if !fileToMoveMatched || !moveToMatched {
+		return fmt.Errorf("wrong file name format")
+	}
+
+
 	err := t.CopyFile(fileToMove, moveTo)
 
 	if err != nil {
@@ -193,7 +226,11 @@ func (t *Tree) MoveFile(fileToMove string, moveTo string) error {
 }
 
 func (t *Tree) LS(address string) ([]string, error) {
-	address = CleanAddress(address)
+	address, matched := CleanAddress(address)
+
+	if !matched {
+		return nil, fmt.Errorf("wrong file name format")
+	}
 	if !t.DirectoryExists(address) {
 		return nil, fmt.Errorf("directory does not exist")
 	}
@@ -214,7 +251,7 @@ func (t *Tree) LS(address string) ([]string, error) {
 
 
 func (t *Tree) PathExists(address string) (exists bool, isDirectory bool) {
-	address = CleanAddress(address)
+	address, _ = CleanAddress(address)
 	node, ok := t.Nodes[address]
 
 	if ok {
@@ -294,12 +331,14 @@ func PrintDir(depth int, dir *Node) {
 	}
 }
 
-func CleanAddress(address string) string {
+func CleanAddress(address string) (string, bool) {
+	matched, _ := regexp.Match("[a-zA-Z_\\-.0-9/]+", []byte(address))
+
 	cleaned := path.Clean(address)
 
 	if cleaned[0] == '/' {
 		cleaned = cleaned[1:]
 	}
 
-	return cleaned
+	return cleaned, matched
 }
