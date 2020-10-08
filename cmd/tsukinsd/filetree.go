@@ -179,6 +179,26 @@ func (t *Tree) MoveFile(fileToMove string, moveTo string) error {
 	return nil
 }
 
+func (t *Tree) LS(address string) ([]string, error) {
+	address = path.Clean(address)
+	if !t.DirectoryExists(address) {
+		return nil, fmt.Errorf("directory does not exist")
+	}
+
+	dir, _ := t.GetNodeByAddress(address)
+	var list []string
+
+	for _, node := range dir.Childs {
+		name := path.Base(node.Address)
+		if node.IsDirectory {
+			name += "/"
+		}
+		list = append(list, name)
+	}
+
+	return list, nil
+}
+
 
 func (t *Tree) PathExists(address string) (exists bool, isDirectory bool) {
 	address = path.Clean(address)
