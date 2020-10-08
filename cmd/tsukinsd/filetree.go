@@ -263,6 +263,18 @@ func (t *Tree) SaveTree(saveTo string) bool {
 	return true
 }
 
+func LoadTree(openFrom string) *Tree {
+	file, _ := os.Open(openFrom)
+	defer file.Close()
+
+	decoder := gob.NewDecoder(file)
+
+	var tree Tree
+	decoder.Decode(&tree)
+
+	return &tree
+}
+
 func (t *Tree) PrintTreeStruct() {
 	PrintDir(0, t.Nodes["."])
 }
