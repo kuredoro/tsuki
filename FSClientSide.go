@@ -85,7 +85,7 @@ func (s *FileServer) getTokenExpectationForChunk(token, id string) ExpectAction 
     return action
 }
 
-func (cs *FileServer) ServerClient(w http.ResponseWriter, r *http.Request) {
+func (cs *FileServer) ServeClient(w http.ResponseWriter, r *http.Request) {
     chunkId := strings.TrimPrefix(r.URL.Path, "/chunks/")
     token := r.URL.Query().Get("token")
     

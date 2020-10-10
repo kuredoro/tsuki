@@ -26,7 +26,7 @@ func TestFSChunkSend(t *testing.T) {
         request := tsuki.NewGetChunkRequest(chunkId, token)
         response := httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertResponseBody(t, response.Body.String(), store.Index[chunkId])
@@ -42,7 +42,7 @@ func TestFSChunkSend(t *testing.T) {
         request := tsuki.NewGetChunkRequest(chunkId, token)
         response := httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertResponseBody(t, response.Body.String(), store.Index[chunkId])
@@ -51,7 +51,7 @@ func TestFSChunkSend(t *testing.T) {
         request = tsuki.NewGetChunkRequest(chunkId, token)
         response = httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
     })
@@ -66,7 +66,7 @@ func TestFSChunkSend(t *testing.T) {
         request := tsuki.NewGetChunkRequest("1", "xyz")
         response := httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
 
@@ -74,7 +74,7 @@ func TestFSChunkSend(t *testing.T) {
         request = tsuki.NewGetChunkRequest("1", token)
         response = httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertResponseBody(t, response.Body.String(), store.Index[chunkId])
@@ -89,7 +89,7 @@ func TestFSChunkSend(t *testing.T) {
         request := tsuki.NewGetChunkRequest("abc", token)
         response := httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusNotFound)
     })
@@ -99,7 +99,7 @@ func TestFSChunkSend(t *testing.T) {
         request := tsuki.NewGetChunkRequest("abc", "xyz")
         response := httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
     })
@@ -125,7 +125,7 @@ func TestFSChunkReceive(t *testing.T) {
         request := tsuki.NewPostChunkRequest(chunkId, text, token)
         response := httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertChunkContents(t, store, chunkId, text)
@@ -141,7 +141,7 @@ func TestFSChunkReceive(t *testing.T) {
         request := tsuki.NewPostChunkRequest(chunkId, text, token)
         response := httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertChunkContents(t, store, chunkId, text)
@@ -150,7 +150,7 @@ func TestFSChunkReceive(t *testing.T) {
         request = tsuki.NewPostChunkRequest(chunkId, text, token)
         response = httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
     })
@@ -164,7 +164,7 @@ func TestFSChunkReceive(t *testing.T) {
         request := tsuki.NewPostChunkRequest(chunkId, text, token)
         response := httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
     })
@@ -179,7 +179,7 @@ func TestFSChunkReceive(t *testing.T) {
         request := tsuki.NewPostChunkRequest(chunkId, text, token)
         response := httptest.NewRecorder()
 
-        fsd.ServerClient(response, request)
+        fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
     })
