@@ -16,7 +16,7 @@ var ns string
 
 func init() {
     flag.IntVar(&port, "port", 7000, "port for clients")
-    flag.StringVar(&ns, "ns", "http://localhost:7001", "address of the name server")
+    flag.StringVar(&ns, "ns", "http://localhost:7071", "address of the name server")
 }
 
 func main() {
@@ -40,11 +40,9 @@ func main() {
         },
     }
 
-    /*
-    nsConn := &tsuki.HTTPNSConnector{ addr: ns }
-    */
+    nsConn := &tsuki.HTTPNSConnector{ Addr: ns }
 
-    server := tsuki.NewFileServer(store, nil)
+    server := tsuki.NewFileServer(store, nsConn)
 
     var wg sync.WaitGroup
     wg.Add(2)
@@ -55,7 +53,7 @@ func main() {
         }
     }()
 
-    go func() , nil{
+    go func() {
         defer wg.Done()
         if err := http.ListenAndServe(addrForInner, http.HandlerFunc(server.ServeInner)); err != nil {
             log.Fatalf("could not listen on %v, %v", addrForClients, err)
