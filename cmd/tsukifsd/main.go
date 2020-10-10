@@ -5,24 +5,26 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/kureduro/tsuki"
 )
 
-var clientPort int
+var port int
 var ns string
 
 func init() {
-    flag.IntVar(&clientPort, "client-port", 7000, "port for clients")
-    flag.StringVar(&ns, "ns", "localhost:7001", "address of the name server")
+    flag.IntVar(&port, "port", 7000, "port for clients")
+    flag.StringVar(&ns, "ns", "http://localhost:7001", "address of the name server")
 }
 
 func main() {
 
     flag.Parse()
 
-    addrForClients := "localhost:" + strconv.Itoa(clientPort)
+    addrForClients := ":" + strconv.Itoa(port)
+    addrForInner := ":" + strconv.Itoa(port + 1)
 
     log.Printf("listening for clients at %s", addrForClients)
 
@@ -39,7 +41,22 @@ func main() {
     }
 
     server := tsuki.NewFileServer(store)
-    if err := http.ListenAndServe(addrForClients, http.HandlerFunc(server.ServeClient)); err != nil {
-        log.Fatalf("could not listen on %v, %v", addrForClients, err)
-    }
+
+    var wg sync.WaitGroup
+    wg.Add(2)
+    go func() {
+        defer wg.Done()
+        if err := http.ListenAndServe(addrForClients, http.HandlerFunc(server.ServeClient)); err != nil {
+            log.Fatalf("could not listen on %v, %v", addrForClients, err)
+        }
+    }()
+
+    go func() {
+        defer wg.Done()
+        if err := http.ListenAndServe(addrForInner, http.HandlerFunc(server.ServeInner)); err != nil {
+            log.Fatalf("could not listen on %v, %v", addrForClients, err)
+        }
+    }()
+
+    wg.Wait()
 }

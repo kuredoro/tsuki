@@ -1,6 +1,7 @@
 package tsuki
 
 import (
+    "log"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -88,10 +89,17 @@ func (s *FileServer) GetTokenExpectationForChunk(token, id string) ExpectAction 
 }
 
 func (s *FileServer) ServeInner(w http.ResponseWriter, r *http.Request) {
+    log.Printf("%s", r.URL)
+
     actionStr := strings.TrimPrefix(r.URL.Path, "/expect/")
     action := strToExpectAction[actionStr]
 
     token := r.URL.Query().Get("token")
+
+    if token == "" {
+        w.WriteHeader(http.StatusBadRequest)
+        return
+    }
 
     buf := &bytes.Buffer{}
     io.Copy(buf, r.Body)
@@ -105,6 +113,8 @@ func (s *FileServer) ServeInner(w http.ResponseWriter, r *http.Request) {
     for _, chunkId := range chunks {
         s.Expect(action, chunkId, token)
     }
+
+    log.Printf("%s : %v", r.URL, chunks)
 
     w.WriteHeader(http.StatusOK)
 }
