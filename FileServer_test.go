@@ -8,7 +8,7 @@ import (
 	"github.com/kureduro/tsuki"
 )
 
-func TestFSChunkSend(t *testing.T) {
+func TestFS_ChunkSend(t *testing.T) {
     store := &tsuki.InMemoryChunkStorage{
         Index: map[string]string {
             "0" : "Hello",
@@ -105,7 +105,7 @@ func TestFSChunkSend(t *testing.T) {
     })
 }
 
-func TestFSChunkReceive(t *testing.T) {
+func TestFS_ChunkReceive(t *testing.T) {
     store := &tsuki.InMemoryChunkStorage {
         Index : map[string]string {
             "0" : "abcde",
@@ -183,28 +183,49 @@ func TestFSChunkReceive(t *testing.T) {
 
         tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
     })
-    /*
-    t.Run("upload chunk 10",
-    func (t *testing.T) {
-        text := "another chunk"
-        request := tsuki.NewPostChunkRequest("10", text, token)
-        response := httptest.NewRecorder()
+}
 
-        fsd.ServerClient(response, request)
+func TestFS_ReceiveExpect(t *testing.T) {
+    store := &tsuki.InMemoryChunkStorage {
+        Index: map[string]string {
+            "0": "abracadabra",
+            "1": "watashihanekodesuka",
+        },
+    }
 
-        tsuki.AssertStatus(t, response.Code, http.StatusOK)
-        tsuki.AssertChunkContents(t, store, "10", text)
-    })
+    fsd := tsuki.NewFileServer(store)
 
-    t.Run("upload chunk 10 again",
-    func (t *testing.T) {
-        text := "changed chunk"
-        request := tsuki.NewPostChunkRequest("10", text, token)
-        response := httptest.NewRecorder()
+    token := "abc"
 
-        fsd.ServerClient(response, request)
+    batch1 := []string{ "a", "b", "c" }
+    want := tsuki.ExpectActionRead
 
-        tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
-    })
-    */
+    request := tsuki.NewExpectRequest("read", token, batch1)
+    response := httptest.NewRecorder()
+
+    fsd.ServeInner(response, request)
+
+    tsuki.AssertStatus(t, response.Code, http.StatusOK)
+    for _, id := range batch1 {
+        got := fsd.GetTokenExpectationForChunk(token, id)
+        if  got != want {
+            t.Errorf("1st request: token=%s chunk=%s, got action %v, want %v", token, id, got, want)
+        }
+    }
+
+    batch2 := []string{ "b", "c", "d" }
+    want = tsuki.ExpectActionWrite
+
+    request = tsuki.NewExpectRequest("write", token, batch2)
+    response = httptest.NewRecorder()
+
+    fsd.ServeInner(response, request)
+
+    tsuki.AssertStatus(t, response.Code, http.StatusOK)
+    for _, id := range batch2 {
+        got := fsd.GetTokenExpectationForChunk(token, id)
+        if  got != want {
+            t.Errorf("2st request: token=%s chunk=%s, got action %v, want %v", token, id, got, want)
+        }
+    }
 }
