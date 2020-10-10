@@ -82,7 +82,6 @@ func TestFSChunkUpload(t *testing.T) {
         tsuki.AssertChunkContents(t, store, "2", text)
     })
 
-    /*
     t.Run("upload chunk 10",
     func (t *testing.T) {
         text := "another chunk"
@@ -94,5 +93,15 @@ func TestFSChunkUpload(t *testing.T) {
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertChunkContents(t, store, "10", text)
     })
-    */
+
+    t.Run("upload chunk 10 again",
+    func (t *testing.T) {
+        text := "changed chunk"
+        request := tsuki.NewPostChunkRequest("10", text)
+        response := httptest.NewRecorder()
+
+        server.ServerClient(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
+    })
 }
