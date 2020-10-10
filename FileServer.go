@@ -95,7 +95,7 @@ func (s *FileServer) GetTokenExpectationForChunk(token, id string) ExpectAction 
 }
 
 func (s *FileServer) ServeInner(w http.ResponseWriter, r *http.Request) {
-    log.Printf("%s", r.URL)
+    log.Printf("ServeInner: %s", r.URL)
 
     actionStr := strings.TrimPrefix(r.URL.Path, "/expect/")
     action := strToExpectAction[actionStr]
@@ -140,6 +140,7 @@ func (cs *FileServer) ServeClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *FileServer) SendChunk(w http.ResponseWriter, r *http.Request, id, token string) {
+    log.Printf("Chunk READ request: id=%s, token=%s", id, token)
 
     if s.GetTokenExpectationForChunk(token, id) == ExpectActionNothing {
         w.WriteHeader(http.StatusUnauthorized)
@@ -160,6 +161,7 @@ func (s *FileServer) SendChunk(w http.ResponseWriter, r *http.Request, id, token
 }
 
 func (s *FileServer) ReceiveChunk(w http.ResponseWriter, r *http.Request, id, token string) {
+    log.Printf("Chunk WRITE request: id=%s, token=%s", id, token)
 
     if s.GetTokenExpectationForChunk(token, id) == ExpectActionNothing {
         w.WriteHeader(http.StatusUnauthorized)
