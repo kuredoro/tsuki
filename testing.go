@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 type InMemoryChunkStorage struct {
@@ -90,5 +91,32 @@ func AssertResponseBody(t *testing.T, got, want string) {
     if got != want {
         t.Errorf("wrong response body, got %q, want %q", got, want)
     }
+}
+
+
+type SpyPoller struct {
+    CallCount int
+}
+
+func (p *SpyPoller) Poll() {
+    p.CallCount++
+}
+
+
+type SpySleeper struct {
+    CallCount int
+}
+
+func (s *SpySleeper) Sleep() {
+    s.CallCount++
+}
+
+
+type SpySleeperTime struct {
+    DurationSlept time.Duration
+}
+
+func (s *SpySleeperTime) Sleep(duration time.Duration) {
+    s.DurationSlept = duration
 }
 
