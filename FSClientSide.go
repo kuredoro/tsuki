@@ -1,7 +1,6 @@
 package tsuki
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
     "io"
@@ -59,7 +58,7 @@ func (cs *FileServer) SendChunk(w http.ResponseWriter, id string) {
 }
 
 func (cs *FileServer) DownloadChunk(w http.ResponseWriter, r *http.Request, id string) {
-    chunk, finishChunk, err := cs.chunks.Create("2")
+    chunk, finishChunk, err := cs.chunks.Create(id)
     defer finishChunk()
 
     if err == ErrChunkExists {
@@ -72,5 +71,7 @@ func (cs *FileServer) DownloadChunk(w http.ResponseWriter, r *http.Request, id s
         return
     }
 
-    fmt.Fprint(chunk, "This is chunk 2")
+    io.Copy(chunk, r.Body)
+
+    w.WriteHeader(http.StatusOK)
 }
