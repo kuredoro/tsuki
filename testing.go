@@ -2,13 +2,14 @@ package tsuki
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
-	"encoding/json"
 )
 
 type InMemoryChunkStorage struct {
@@ -49,6 +50,19 @@ func (s *InMemoryChunkStorage) Exists(id string) (exists bool) {
     _, exists = s.Index[id]
     return
 }
+
+type SpyNSConnector struct {
+    receivedChunks []string
+}
+
+func (c *SpyNSConnector) ReceivedChunk(id string) {
+    c.receivedChunks = append(c.receivedChunks, id)
+}
+
+func (c *SpyNSConnector) Reset() {
+    c.receivedChunks = nil
+}
+
 
 func NewGetChunkRequest(id, token string) *http.Request {
     req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/chunks/%s?token=%s", id, token), nil)
@@ -98,6 +112,14 @@ func AssertResponseBody(t *testing.T, got, want string) {
     t.Helper()
     if got != want {
         t.Errorf("wrong response body, got %q, want %q", got, want)
+    }
+}
+
+func AssertReceivedChunkCalls(t *testing.T, nsConn *SpyNSConnector, ids ...string) {
+    t.Helper()
+
+    if !reflect.DeepEqual(nsConn.receivedChunks, ids) {
+        t.Errorf("incorrect calls to ns/receivedChunk, got %#v, %#v", nsConn.receivedChunks, ids)
     }
 }
 

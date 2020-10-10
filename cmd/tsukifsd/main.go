@@ -40,7 +40,11 @@ func main() {
         },
     }
 
-    server := tsuki.NewFileServer(store)
+    /*
+    nsConn := &tsuki.HTTPNSConnector{ addr: ns }
+    */
+
+    server := tsuki.NewFileServer(store, nil)
 
     var wg sync.WaitGroup
     wg.Add(2)
@@ -51,7 +55,7 @@ func main() {
         }
     }()
 
-    go func() {
+    go func() , nil{
         defer wg.Done()
         if err := http.ListenAndServe(addrForInner, http.HandlerFunc(server.ServeInner)); err != nil {
             log.Fatalf("could not listen on %v, %v", addrForClients, err)
