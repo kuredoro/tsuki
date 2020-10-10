@@ -3,41 +3,74 @@ package tsuki
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
+    "io"
 )
 
-type ChunkStore interface {
-    GetChunk(id int64) (string, error)
+type chunkError string
+
+func (c chunkError) Error() string { return string(c) }
+
+const (
+    ErrChunkExists = chunkError("chunk already exists")
+    ErrChunkNotFound = chunkError("chunk does not exists")
+)
+
+type ChunkDB interface {
+    Get(id string) (io.Reader, func(), error)
+    Create(id string) (io.Writer, func(), error)
+    Exists(id string) bool
 }
 
-type FSClientSide struct {
-    store ChunkStore
+type FileServer struct {
+    chunks ChunkDB
 }
 
-func NewFSClientSide(store ChunkStore) *FSClientSide {
-    return &FSClientSide{
-        store: store,
+func NewFileServer(store ChunkDB) *FileServer {
+    return &FileServer{
+        chunks: store,
     }
 }
 
-func (cs *FSClientSide) ServerHTTP(w http.ResponseWriter, r *http.Request) {
-    idStr := strings.TrimPrefix(r.URL.Path, "/chunks/")
+func (cs *FileServer) ServerClient(w http.ResponseWriter, r *http.Request) {
+    chunkId := strings.TrimPrefix(r.URL.Path, "/chunks/")
     
-    chunkId, err := strconv.Atoi(idStr)
-
-    if err != nil || chunkId < 0{
-        w.WriteHeader(http.StatusNotAcceptable)
-        return
+    switch r.Method {
+    case http.MethodGet:
+        cs.SendChunk(w, chunkId)
+    case http.MethodPost:
+        cs.DownloadChunk(w, r, chunkId)
+    default:
+        w.WriteHeader(http.StatusMethodNotAllowed)
     }
+}
 
-    chunk, err := cs.store.GetChunk(int64(chunkId))
+func (cs *FileServer) SendChunk(w http.ResponseWriter, id string) {
+    chunk, closeChunk, err := cs.chunks.Get(id)
+    defer closeChunk()
 
     if err != nil {
         w.WriteHeader(http.StatusNotFound)
         return
     }
 
-    fmt.Fprint(w, chunk)
+    io.Copy(w, chunk)
     return
+}
+
+func (cs *FileServer) DownloadChunk(w http.ResponseWriter, r *http.Request, id string) {
+    chunk, finishChunk, err := cs.chunks.Create("2")
+    defer finishChunk()
+
+    if err == ErrChunkExists {
+        w.WriteHeader(http.StatusForbidden)
+        return
+    }
+
+    if err != nil {
+        w.WriteHeader(http.StatusInternalServerError)
+        return
+    }
+
+    fmt.Fprint(chunk, "This is chunk 2")
 }
