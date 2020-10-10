@@ -15,7 +15,10 @@ func TestFS_ChunkSend(t *testing.T) {
             "1" : "world",
         },
     }
-    fsd := tsuki.NewFileServer(store)
+
+    nsConn := &tsuki.SpyNSConnector{}
+
+    fsd := tsuki.NewFileServer(store, nsConn)
 
     t.Run("get expected chunk 0",
     func (t *testing.T) {
@@ -113,7 +116,9 @@ func TestFS_ChunkReceive(t *testing.T) {
         },
     }
 
-    fsd := tsuki.NewFileServer(store)
+    nsConn := &tsuki.SpyNSConnector{}
+
+    fsd := tsuki.NewFileServer(store, nsConn)
 
     t.Run("upload expected chunk 2",
     func (t *testing.T) {
@@ -129,10 +134,12 @@ func TestFS_ChunkReceive(t *testing.T) {
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertChunkContents(t, store, chunkId, text)
+        tsuki.AssertReceivedChunkCalls(t, nsConn, chunkId)
     })
 
     t.Run("upload expected chunk 3 twice",
     func (t *testing.T) {
+        nsConn.Reset()
         chunkId := "3"
         token := chunkId
         fsd.Expect(tsuki.ExpectActionWrite, chunkId, token)
@@ -145,6 +152,7 @@ func TestFS_ChunkReceive(t *testing.T) {
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertChunkContents(t, store, chunkId, text)
+        tsuki.AssertReceivedChunkCalls(t, nsConn, chunkId)
 
         // Can not write twice
         request = tsuki.NewPostChunkRequest(chunkId, text, token)
@@ -153,10 +161,12 @@ func TestFS_ChunkReceive(t *testing.T) {
         fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
+        tsuki.AssertReceivedChunkCalls(t, nsConn, chunkId)
     })
 
     t.Run("upload unexpected chunk 4",
     func (t *testing.T) {
+        nsConn.Reset()
         chunkId := "4"
         token := chunkId
 
@@ -167,10 +177,12 @@ func TestFS_ChunkReceive(t *testing.T) {
         fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
+        tsuki.AssertReceivedChunkCalls(t, nsConn)
     })
 
     t.Run("upload expected, but registered chunk 1",
     func (t *testing.T) {
+        nsConn.Reset()
         chunkId := "1"
         token := chunkId
         fsd.Expect(tsuki.ExpectActionWrite, chunkId, token)
@@ -182,6 +194,7 @@ func TestFS_ChunkReceive(t *testing.T) {
         fsd.ServeClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
+        tsuki.AssertReceivedChunkCalls(t, nsConn)
     })
 }
 
@@ -193,7 +206,9 @@ func TestFS_ReceiveExpect(t *testing.T) {
         },
     }
 
-    fsd := tsuki.NewFileServer(store)
+    nsConn := &tsuki.SpyNSConnector{}
+
+    fsd := tsuki.NewFileServer(store, nsConn)
 
     token := "abc"
 
