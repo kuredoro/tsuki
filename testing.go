@@ -48,18 +48,18 @@ func (s *InMemoryChunkStorage) Exists(id string) (exists bool) {
     return
 }
 
-func NewGetChunkRequest(id string) *http.Request {
-    req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/chunks/%v", id), nil)
+func NewGetChunkRequest(id, token string) *http.Request {
+    req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/chunks/%s?token=%s", id, token), nil)
     return req
 }
 
-func NewPostChunkRequest(id string, content string) *http.Request {
+func NewPostChunkRequest(id, content, token string) *http.Request {
     buf := bytes.NewBufferString(content)
-    request, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("/chunks/%v", id), buf)
+    request, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("/chunks/%s?token=%s", id, token), buf)
     return request
 }
 
-func AssertChunkContents(t *testing.T, chunks ChunkDB, id string, want string) {
+func AssertChunkContents(t *testing.T, chunks ChunkDB, id, want string) {
     t.Helper()
 
     if !chunks.Exists(id) {
