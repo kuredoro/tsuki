@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"encoding/json"
 )
 
 type InMemoryChunkStorage struct {
@@ -58,6 +59,13 @@ func NewPostChunkRequest(id, content, token string) *http.Request {
     buf := bytes.NewBufferString(content)
     request, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("/chunks/%s?token=%s", id, token), buf)
     return request
+}
+
+func NewExpectRequest(method, token string, chunks []string) *http.Request {
+    b, _ := json.Marshal(chunks)
+    url := fmt.Sprintf("/expect/%s?token=%s", method, token)
+    req, _ := http.NewRequest(http.MethodGet, url, bytes.NewBuffer(b))
+    return req
 }
 
 func AssertChunkContents(t *testing.T, chunks ChunkDB, id, want string) {
