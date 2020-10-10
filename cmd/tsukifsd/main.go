@@ -1,28 +1,33 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
-	"os"
+	"strconv"
+	"time"
 
 	"github.com/kureduro/tsuki"
 )
 
-var addr = "localhost:7070"
+var clientPort int
+var ns string
+
+func init() {
+    flag.IntVar(&clientPort, "client-port", 7000, "port for clients")
+    flag.StringVar(&ns, "ns", "localhost:7001", "address of the name server")
+}
 
 func main() {
 
-    if len(os.Args) == 1 {
-        log.Printf("Using default address %v, you can pass the desired address as the second argument.", addr)
-    }
+    flag.Parse()
 
-    if len(os.Args) == 2 {
-        addr = os.Args[1]
-    }
+    addrForClients := "localhost:" + strconv.Itoa(clientPort)
 
-    if len(os.Args) > 2 {
-        log.Printf("warning: Got additional (count=%d) unneded command line arguments.", len(os.Args))
-    }
+    log.Printf("listening for clients at %s", addrForClients)
+
+    heart := tsuki.NewHeart(ns + "/pulse", 3 * time.Second)
+    go heart.Poll(-1)
 
     store := &tsuki.InMemoryChunkStorage{
         Index : map[string]string {
@@ -34,7 +39,7 @@ func main() {
     }
 
     server := tsuki.NewFileServer(store)
-    if err := http.ListenAndServe(addr, http.HandlerFunc(server.ServeClient)); err != nil {
-        log.Fatalf("could not listen on %v, %v", addr, err)
+    if err := http.ListenAndServe(addrForClients, http.HandlerFunc(server.ServeClient)); err != nil {
+        log.Fatalf("could not listen on %v, %v", addrForClients, err)
     }
 }
