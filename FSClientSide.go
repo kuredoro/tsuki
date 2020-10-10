@@ -6,14 +6,30 @@ import (
     "io"
 )
 
-type chunkError string
+type ChunkError string
 
-func (c chunkError) Error() string { return string(c) }
+func (c ChunkError) Error() string { return string(c) }
 
 const (
-    ErrChunkExists = chunkError("chunk already exists")
-    ErrChunkNotFound = chunkError("chunk does not exists")
+    ErrChunkExists = ChunkError("chunk already exists")
+    ErrChunkNotFound = ChunkError("chunk does not exists")
 )
+
+type ExpectAction int
+
+const (
+    ExpectActionNothing = ExpectAction(0)
+    ExpectActionRead = ExpectAction(1)
+    ExpectActionWrite = ExpectAction(2)
+)
+
+var strToExpectAction = map[string]ExpectAction {
+    "read": ExpectActionRead,
+    "write": ExpectActionWrite,
+}
+
+// token -> chunkId -> ExpectAction
+type TokenExpectations map[string]map[string]ExpectAction
 
 type ChunkDB interface {
     Get(id string) (io.Reader, func(), error)
@@ -23,11 +39,33 @@ type ChunkDB interface {
 
 type FileServer struct {
     chunks ChunkDB
+    expectations TokenExpectations
 }
 
 func NewFileServer(store ChunkDB) *FileServer {
     return &FileServer{
         chunks: store,
+        expectations: make(TokenExpectations),
+    }
+}
+
+func (s *FileServer) Expect(action ExpectAction, id, token string) {
+    // TODO: timeout
+    _, exists := s.expectations[token]
+    if !exists {
+        s.expectations[token] = make(map[string]ExpectAction)
+    }
+
+    s.expectations[token][id] = action
+}
+
+func (s *FileServer) fullfilExpectation(token, id string) {
+    // Expects correct token and id
+
+    delete(s.expectations[token], id)
+
+    if len(s.expectations[token]) == 0 {
+        delete(s.expectations, token)
     }
 }
 
@@ -36,7 +74,7 @@ func (cs *FileServer) ServerClient(w http.ResponseWriter, r *http.Request) {
     
     switch r.Method {
     case http.MethodGet:
-        cs.SendChunk(w, chunkId)
+        cs.SendChunk(w, r, chunkId)
     case http.MethodPost:
         cs.DownloadChunk(w, r, chunkId)
     default:
@@ -44,8 +82,17 @@ func (cs *FileServer) ServerClient(w http.ResponseWriter, r *http.Request) {
     }
 }
 
-func (cs *FileServer) SendChunk(w http.ResponseWriter, id string) {
-    chunk, closeChunk, err := cs.chunks.Get(id)
+func (s *FileServer) SendChunk(w http.ResponseWriter, r *http.Request, id string) {
+    token := r.URL.Query().Get("token")
+
+    action, exists := s.expectations[token][id]
+    if !exists || action != ExpectActionRead {
+        w.WriteHeader(http.StatusForbidden)
+        return
+    }
+    defer s.fullfilExpectation(token, id)
+
+    chunk, closeChunk, err := s.chunks.Get(id)
     defer closeChunk()
 
     if err != nil {
