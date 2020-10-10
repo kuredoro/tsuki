@@ -24,7 +24,7 @@ func (p *HTTPPoller) Poll() {
     _, err := http.Get(p.address)
 
     if err != nil {
-        log.Printf("warning: could sent hertbeat to %s", p.address)
+        log.Printf("warning: couldn't send hertbeat to %s", p.address)
     }
 }
 
