@@ -29,6 +29,8 @@ var strToExpectAction = map[string]ExpectAction {
 }
 
 // token -> chunkId -> ExpectAction
+// Putting token first makes it more cache-friendly, since there much less
+// tokens than chunks.
 type TokenExpectations map[string]map[string]ExpectAction
 
 type ChunkDB interface {
@@ -69,25 +71,38 @@ func (s *FileServer) fullfilExpectation(token, id string) {
     }
 }
 
+func (s *FileServer) getTokenExpectationForChunk(token, id string) ExpectAction {
+    _, exists := s.expectations[token]
+    if !exists {
+        return ExpectActionNothing
+    }
+
+    action, exists := s.expectations[token][id]
+    if !exists {
+        return ExpectActionNothing
+    }
+
+    return action
+}
+
 func (cs *FileServer) ServerClient(w http.ResponseWriter, r *http.Request) {
     chunkId := strings.TrimPrefix(r.URL.Path, "/chunks/")
+    token := r.URL.Query().Get("token")
     
     switch r.Method {
     case http.MethodGet:
-        cs.SendChunk(w, r, chunkId)
+        cs.SendChunk(w, r, chunkId, token)
     case http.MethodPost:
-        cs.DownloadChunk(w, r, chunkId)
+        cs.ReceiveChunk(w, r, chunkId, token)
     default:
         w.WriteHeader(http.StatusMethodNotAllowed)
     }
 }
 
-func (s *FileServer) SendChunk(w http.ResponseWriter, r *http.Request, id string) {
-    token := r.URL.Query().Get("token")
+func (s *FileServer) SendChunk(w http.ResponseWriter, r *http.Request, id, token string) {
 
-    action, exists := s.expectations[token][id]
-    if !exists || action != ExpectActionRead {
-        w.WriteHeader(http.StatusForbidden)
+    if s.getTokenExpectationForChunk(token, id) == ExpectActionNothing {
+        w.WriteHeader(http.StatusUnauthorized)
         return
     }
     defer s.fullfilExpectation(token, id)
@@ -104,8 +119,15 @@ func (s *FileServer) SendChunk(w http.ResponseWriter, r *http.Request, id string
     return
 }
 
-func (cs *FileServer) DownloadChunk(w http.ResponseWriter, r *http.Request, id string) {
-    chunk, finishChunk, err := cs.chunks.Create(id)
+func (s *FileServer) ReceiveChunk(w http.ResponseWriter, r *http.Request, id, token string) {
+
+    if s.getTokenExpectationForChunk(token, id) == ExpectActionNothing {
+        w.WriteHeader(http.StatusUnauthorized)
+        return
+    }
+    defer s.fullfilExpectation(token, id)
+
+    chunk, finishChunk, err := s.chunks.Create(id)
     defer finishChunk()
 
     if err == ErrChunkExists {

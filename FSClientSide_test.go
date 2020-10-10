@@ -53,7 +53,7 @@ func TestFSChunkSend(t *testing.T) {
 
         fsd.ServerClient(response, request)
 
-        tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
+        tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
     })
 
     t.Run("get expected chunk 1 with bad token and correct one",
@@ -68,7 +68,7 @@ func TestFSChunkSend(t *testing.T) {
 
         fsd.ServerClient(response, request)
 
-        tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
+        tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
 
         // Correct token afterwards
         request = tsuki.NewGetChunkRequest("1", token)
@@ -101,7 +101,7 @@ func TestFSChunkSend(t *testing.T) {
 
         fsd.ServerClient(response, request)
 
-        tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
+        tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
     })
 }
 
@@ -113,29 +113,84 @@ func TestFSChunkReceive(t *testing.T) {
         },
     }
 
-    server := tsuki.NewFileServer(store)
+    fsd := tsuki.NewFileServer(store)
 
-    token := "abcd"
-
-    t.Run("upload chunk 2",
+    t.Run("upload expected chunk 2",
     func (t *testing.T) {
+        chunkId := "2"
+        token := chunkId
+        fsd.Expect(tsuki.ExpectActionWrite, chunkId, token)
+
         text := "This is chunk 2"
-        request := tsuki.NewPostChunkRequest("2", text, token)
+        request := tsuki.NewPostChunkRequest(chunkId, text, token)
         response := httptest.NewRecorder()
 
-        server.ServerClient(response, request)
+        fsd.ServerClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
-        tsuki.AssertChunkContents(t, store, "2", text)
+        tsuki.AssertChunkContents(t, store, chunkId, text)
     })
 
+    t.Run("upload expected chunk 3 twice",
+    func (t *testing.T) {
+        chunkId := "3"
+        token := chunkId
+        fsd.Expect(tsuki.ExpectActionWrite, chunkId, token)
+
+        text := "test test foo bar"
+        request := tsuki.NewPostChunkRequest(chunkId, text, token)
+        response := httptest.NewRecorder()
+
+        fsd.ServerClient(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+        tsuki.AssertChunkContents(t, store, chunkId, text)
+
+        // Can not write twice
+        request = tsuki.NewPostChunkRequest(chunkId, text, token)
+        response = httptest.NewRecorder()
+
+        fsd.ServerClient(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
+    })
+
+    t.Run("upload unexpected chunk 4",
+    func (t *testing.T) {
+        chunkId := "4"
+        token := chunkId
+
+        text := "didn't expect me!?"
+        request := tsuki.NewPostChunkRequest(chunkId, text, token)
+        response := httptest.NewRecorder()
+
+        fsd.ServerClient(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
+    })
+
+    t.Run("upload expected, but registered chunk 1",
+    func (t *testing.T) {
+        chunkId := "1"
+        token := chunkId
+        fsd.Expect(tsuki.ExpectActionWrite, chunkId, token)
+
+        text := "i'm overwritting existing chunk!"
+        request := tsuki.NewPostChunkRequest(chunkId, text, token)
+        response := httptest.NewRecorder()
+
+        fsd.ServerClient(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
+    })
+    /*
     t.Run("upload chunk 10",
     func (t *testing.T) {
         text := "another chunk"
         request := tsuki.NewPostChunkRequest("10", text, token)
         response := httptest.NewRecorder()
 
-        server.ServerClient(response, request)
+        fsd.ServerClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertChunkContents(t, store, "10", text)
@@ -147,8 +202,9 @@ func TestFSChunkReceive(t *testing.T) {
         request := tsuki.NewPostChunkRequest("10", text, token)
         response := httptest.NewRecorder()
 
-        server.ServerClient(response, request)
+        fsd.ServerClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
     })
+    */
 }
