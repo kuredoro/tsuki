@@ -1,46 +1,31 @@
 package tsuki_test
 
 import (
-    "fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-    "github.com/kureduro/tsuki"
+	"github.com/kureduro/tsuki"
 )
 
-type InMemoryChunkStorage struct {
-    index map[int64]string
-}
-
-func (s *InMemoryChunkStorage) GetChunk(id int64) (string, error) {
-    chunk, exists := s.index[id]
-
-    if !exists {
-        return "", fmt.Errorf("no chunk associated with id")
-    }
-
-    return chunk, nil
-}
-
 func TestFSChunkDownload(t *testing.T) {
-    store := &InMemoryChunkStorage{
-        index: map[int64]string {
-            0 : "Hello",
-            1 : "world",
+    store := &tsuki.InMemoryChunkStorage{
+        Index: map[string]string {
+            "0" : "Hello",
+            "1" : "world",
         },
     }
-    fsd := tsuki.NewFSClientSide(store)
+    fsd := tsuki.NewFileServer(store)
 
     t.Run("get chunk 0",
     func (t *testing.T) {
         request := tsuki.NewGetChunkRequest("0")
         response := httptest.NewRecorder()
 
-        fsd.ServerHTTP(response, request)
+        fsd.ServerClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
-        tsuki.AssertResponseBody(t, response.Body.String(), store.index[0])
+        tsuki.AssertResponseBody(t, response.Body.String(), store.Index["0"])
     })
 
     t.Run("get chunk 1",
@@ -48,10 +33,10 @@ func TestFSChunkDownload(t *testing.T) {
         request := tsuki.NewGetChunkRequest("1")
         response := httptest.NewRecorder()
 
-        fsd.ServerHTTP(response, request)
+        fsd.ServerClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
-        tsuki.AssertResponseBody(t, response.Body.String(), store.index[1])
+        tsuki.AssertResponseBody(t, response.Body.String(), store.Index["1"])
     })
 
     t.Run("get undefined chunk 2",
@@ -59,38 +44,55 @@ func TestFSChunkDownload(t *testing.T) {
         request := tsuki.NewGetChunkRequest("2")
         response := httptest.NewRecorder()
 
-        fsd.ServerHTTP(response, request)
+        fsd.ServerClient(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusNotFound)
     })
 
-    t.Run("get invalid chunk abc",
+    t.Run("get undefined chunk abc",
     func (t *testing.T) {
         request := tsuki.NewGetChunkRequest("abc")
         response := httptest.NewRecorder()
 
-        fsd.ServerHTTP(response, request)
+        fsd.ServerClient(response, request)
 
-        tsuki.AssertStatus(t, response.Code, http.StatusNotAcceptable)
+        tsuki.AssertStatus(t, response.Code, http.StatusNotFound)
     })
+}
 
-    t.Run("get invalid chunk -1",
+func TestFSChunkUpload(t *testing.T) {
+    store := &tsuki.InMemoryChunkStorage {
+        Index : map[string]string {
+            "0" : "abcde",
+            "1" : "xyzw",
+        },
+    }
+
+    server := tsuki.NewFileServer(store)
+
+    t.Run("upload chunk 2",
     func (t *testing.T) {
-        request := tsuki.NewGetChunkRequest("-1")
+        text := "This is chunk 2"
+        request := tsuki.NewPostChunkRequest("2", text)
         response := httptest.NewRecorder()
 
-        fsd.ServerHTTP(response, request)
+        server.ServerClient(response, request)
 
-        tsuki.AssertStatus(t, response.Code, http.StatusNotAcceptable)
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+        tsuki.AssertChunkContents(t, store, "2", text)
     })
 
-    t.Run("get invalid chunk 123456789123456789123456789",
+    /*
+    t.Run("upload chunk 10",
     func (t *testing.T) {
-        request := tsuki.NewGetChunkRequest("123456789123456789123456789")
+        text := "another chunk"
+        request := tsuki.NewPostChunkRequest("10", text)
         response := httptest.NewRecorder()
 
-        fsd.ServerHTTP(response, request)
+        server.ServerClient(response, request)
 
-        tsuki.AssertStatus(t, response.Code, http.StatusNotAcceptable)
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+        tsuki.AssertChunkContents(t, store, "10", text)
     })
+    */
 }
