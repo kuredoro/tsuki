@@ -42,15 +42,21 @@ type ChunkDB interface {
     Exists(id string) bool
 }
 
+type NSConnector interface {
+    ReceivedChunk(id string)
+}
+
 type FileServer struct {
     chunks ChunkDB
     expectations TokenExpectations
+    nsConn NSConnector
 }
 
-func NewFileServer(store ChunkDB) *FileServer {
+func NewFileServer(store ChunkDB, nsConn NSConnector) *FileServer {
     return &FileServer{
         chunks: store,
         expectations: make(TokenExpectations),
+        nsConn: nsConn,
     }
 }
 
@@ -176,5 +182,6 @@ func (s *FileServer) ReceiveChunk(w http.ResponseWriter, r *http.Request, id, to
 
     io.Copy(chunk, r.Body)
 
+    s.nsConn.ReceivedChunk(id)
     w.WriteHeader(http.StatusOK)
 }
