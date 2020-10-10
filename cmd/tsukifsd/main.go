@@ -25,16 +25,16 @@ func main() {
     }
 
     store := &tsuki.InMemoryChunkStorage{
-        Index : map[int64]string {
-            0 : "hi",
-            1 : "how",
-            2 : "are",
-            3 : "you",
+        Index : map[string]string {
+            "0" : "hi",
+            "1" : "how",
+            "2" : "are",
+            "3" : "you",
         },
     }
 
     server := tsuki.NewFileServer(store)
-    if err := http.ListenAndServe(addr, http.HandlerFunc(server.ServerClient)); err != nil {
+    if err := http.ListenAndServe(addr, http.HandlerFunc(server.ServeClient)); err != nil {
         log.Fatalf("could not listen on %v, %v", addr, err)
     }
 }
