@@ -1,9 +1,11 @@
 package tsuki
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
-    "io"
 )
 
 type ChunkError string
@@ -71,7 +73,7 @@ func (s *FileServer) fullfilExpectation(token, id string) {
     }
 }
 
-func (s *FileServer) getTokenExpectationForChunk(token, id string) ExpectAction {
+func (s *FileServer) GetTokenExpectationForChunk(token, id string) ExpectAction {
     _, exists := s.expectations[token]
     if !exists {
         return ExpectActionNothing
@@ -83,6 +85,28 @@ func (s *FileServer) getTokenExpectationForChunk(token, id string) ExpectAction 
     }
 
     return action
+}
+
+func (s *FileServer) ServeInner(w http.ResponseWriter, r *http.Request) {
+    actionStr := strings.TrimPrefix(r.URL.Path, "/expect/")
+    action := strToExpectAction[actionStr]
+
+    token := r.URL.Query().Get("token")
+
+    buf := &bytes.Buffer{}
+    io.Copy(buf, r.Body)
+
+    var chunks []string
+    if err := json.Unmarshal(buf.Bytes(), &chunks); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        return
+    }
+
+    for _, chunkId := range chunks {
+        s.Expect(action, chunkId, token)
+    }
+
+    w.WriteHeader(http.StatusOK)
 }
 
 func (cs *FileServer) ServeClient(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +125,7 @@ func (cs *FileServer) ServeClient(w http.ResponseWriter, r *http.Request) {
 
 func (s *FileServer) SendChunk(w http.ResponseWriter, r *http.Request, id, token string) {
 
-    if s.getTokenExpectationForChunk(token, id) == ExpectActionNothing {
+    if s.GetTokenExpectationForChunk(token, id) == ExpectActionNothing {
         w.WriteHeader(http.StatusUnauthorized)
         return
     }
@@ -121,7 +145,7 @@ func (s *FileServer) SendChunk(w http.ResponseWriter, r *http.Request, id, token
 
 func (s *FileServer) ReceiveChunk(w http.ResponseWriter, r *http.Request, id, token string) {
 
-    if s.getTokenExpectationForChunk(token, id) == ExpectActionNothing {
+    if s.GetTokenExpectationForChunk(token, id) == ExpectActionNothing {
         w.WriteHeader(http.StatusUnauthorized)
         return
     }
