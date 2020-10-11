@@ -128,9 +128,9 @@ func NewPostChunkRequest(id, content, token string) *http.Request {
     return request
 }
 
-func NewExpectRequest(method, token string, chunks []string) *http.Request {
+func NewExpectRequest(action, token string, chunks []string) *http.Request {
     b, _ := json.Marshal(chunks)
-    url := fmt.Sprintf("/expect/%s?token=%s", method, token)
+    url := fmt.Sprintf("/expect/%s?action=%s", token, action)
     req, _ := http.NewRequest(http.MethodGet, url, bytes.NewBuffer(b))
     return req
 }
@@ -155,7 +155,10 @@ func AssertChunkContents(t *testing.T, chunks ChunkDB, id, want string) {
         t.Fatalf("expected chunk %v to exist, but it doesn't", id)
     }
 
-    chunk, closeChunk, _ := chunks.Get(id)
+    chunk, closeChunk, err := chunks.Get(id)
+    if err != nil {
+        t.Fatalf("chunk was deleted right after it was checked for existance")
+    }
     defer closeChunk()
 
     got := &strings.Builder{}
