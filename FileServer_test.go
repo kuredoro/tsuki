@@ -1,10 +1,12 @@
 package tsuki_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
 	//"log"
 	//"io/ioutil"
 	"os"
@@ -388,4 +390,60 @@ func TestFS_ChunkPurge(t *testing.T) {
         tsuki.AssertChunkDoesntExists(t, store, "1")
     })
         */
+}
+
+func TestFS_Probe(t *testing.T) {
+    store := tsuki.NewInMemoryChunkStorage(
+        map[string]string {
+            "0": "chunk0",
+            "1": "isnotchunk1",
+    })
+
+    spyConn := &tsuki.SpyNSConnector{}
+
+    heart := &tsuki.Heart{
+        Poller: spyConn,
+        Sleeper: &tsuki.SpySleeper{},
+    }
+
+    fsd := tsuki.NewFileServer(store, spyConn)
+
+    request := tsuki.NewProbeRequest("addr1")
+    response := httptest.NewRecorder()
+
+    fsd.ServeInner(response, request)
+
+    tsuki.AssertStatus(t, response.Code, http.StatusOK)
+
+    var info tsuki.FSProbeInfo
+
+    if err := json.Unmarshal(response.Body.Bytes(), &info); err != nil {
+        t.Fatalf("could not parse probe JSON output %q, %v", response.Body.String(), err)
+    }
+
+    if info.Available != store.BytesAvailable() {
+        t.Errorf("got %d bytes available, want %d", info.Available, store.BytesAvailable())
+    }
+
+    if spyConn.GetNSAddr() == "" {
+        t.Errorf("expected NS address to be set, but it's not")
+    }
+
+    heart.Contract()
+
+    if spyConn.PulseCount != 1 {
+        t.Errorf("sent %d heartbeats to NS, want %d", spyConn.PulseCount, 1)
+    }
+
+    // Subsequent probes do not change NS
+    request = tsuki.NewProbeRequest("addr2")
+    response = httptest.NewRecorder()
+
+    fsd.ServeInner(response, request)
+
+    tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
+
+    if spyConn.GetNSAddr() != "addr1" {
+        t.Errorf("subsequent probes changed NS server")
+    }
 }

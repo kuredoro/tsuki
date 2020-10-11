@@ -76,16 +76,18 @@ func (e *ExpectationDB) Remove(token string) {
     delete(e.index, token)
 }
 
+type FSProbeInfo struct {
+    Available int
+}
+
 type ChunkDB interface {
     Get(id string) (io.Reader, func(), error)
     Create(id string) (io.Writer, func(), error)
     Exists(id string) bool
     // Should be concurrency safe
     Remove(id string) error
-}
 
-type NSConnector interface {
-    ReceivedChunk(id string)
+    BytesAvailable() int
 }
 
 type FileServer struct {
@@ -108,6 +110,7 @@ func NewFileServer(store ChunkDB, nsConn NSConnector) (s *FileServer) {
     innerRouter.Handle("/expect/", http.HandlerFunc(s.ExpectHandler))
     innerRouter.Handle("/cancelToken", http.HandlerFunc(s.CancelTokenHandler))
     innerRouter.Handle("/purge", http.HandlerFunc(s.PurgeHandler))
+    innerRouter.Handle("/probe", http.HandlerFunc(s.ProbeHandler))
 
     s.innerHandler = innerRouter
 
@@ -283,6 +286,32 @@ func (s *FileServer) PurgeHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     w.WriteHeader(http.StatusOK)
+}
+
+func (s *FileServer) ProbeHandler(w http.ResponseWriter, r *http.Request) {
+    if !s.nsConn.IsNS(r.RemoteAddr) {
+        w.WriteHeader(http.StatusUnauthorized)
+        return
+    }
+
+    s.nsConn.SetNSAddr(r.RemoteAddr)
+
+    info := s.GenerateProbeInfo()
+
+    probeBytes, err := json.Marshal(info)
+    if err != nil {
+        w.WriteHeader(http.StatusInternalServerError)
+        return
+    }
+
+    fmt.Fprint(w, string(probeBytes))
+    w.WriteHeader(http.StatusOK)
+}
+
+func (s *FileServer) GenerateProbeInfo() *FSProbeInfo {
+    return &FSProbeInfo {
+        Available: s.chunks.BytesAvailable(),
+    }
 }
 
 func (cs *FileServer) ServeClient(w http.ResponseWriter, r *http.Request) {

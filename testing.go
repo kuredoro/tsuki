@@ -96,8 +96,8 @@ func (s *InMemoryChunkStorage) Remove(id string) error {
     return nil
 }
 
-func (s *InMemoryChunkStorage) Wait() {
-    s.accessCount.Wait()
+func (s *InMemoryChunkStorage) BytesAvailable() int {
+    return 1024 * 1024 * 10
 }
 
 func NewGetChunkRequest(id, token string) *http.Request {
@@ -128,6 +128,12 @@ func NewPurgeRequest(chunks ...string) *http.Request {
     b, _ := json.Marshal(chunks)
     url := "/purge"
     req, _ := http.NewRequest(http.MethodGet, url, bytes.NewBuffer(b))
+    return req
+}
+
+func NewProbeRequest(remoteAddr string) *http.Request {
+    req, _ := http.NewRequest(http.MethodGet, "/probe", nil)
+    req.RemoteAddr = remoteAddr
     return req
 }
 
