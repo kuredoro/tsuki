@@ -24,7 +24,7 @@ func TestFS_ChunkSend(t *testing.T) {
     func (t *testing.T) {
         chunkId := "0"
         token := chunkId
-        fsd.Expect(tsuki.ExpectActionRead, chunkId, token)
+        fsd.Expect(token, tsuki.ExpectActionRead, chunkId)
 
         request := tsuki.NewGetChunkRequest(chunkId, token)
         response := httptest.NewRecorder()
@@ -39,7 +39,7 @@ func TestFS_ChunkSend(t *testing.T) {
     func (t *testing.T) {
         chunkId := "1"
         token := chunkId
-        fsd.Expect(tsuki.ExpectActionRead, chunkId, token)
+        fsd.Expect(token, tsuki.ExpectActionRead, chunkId)
 
         // Get chunk as expected
         request := tsuki.NewGetChunkRequest(chunkId, token)
@@ -63,7 +63,7 @@ func TestFS_ChunkSend(t *testing.T) {
     func (t *testing.T) {
         chunkId := "1"
         token := chunkId
-        fsd.Expect(tsuki.ExpectActionRead, chunkId, token)
+        fsd.Expect(token, tsuki.ExpectActionRead, chunkId)
 
         // Bad token first
         request := tsuki.NewGetChunkRequest("1", "xyz")
@@ -87,7 +87,7 @@ func TestFS_ChunkSend(t *testing.T) {
     func (t *testing.T) {
         chunkId := "abc"
         token := chunkId
-        fsd.Expect(tsuki.ExpectActionRead, chunkId, token)
+        fsd.Expect(token, tsuki.ExpectActionRead, chunkId)
 
         request := tsuki.NewGetChunkRequest("abc", token)
         response := httptest.NewRecorder()
@@ -124,7 +124,7 @@ func TestFS_ChunkReceive(t *testing.T) {
     func (t *testing.T) {
         chunkId := "2"
         token := chunkId
-        fsd.Expect(tsuki.ExpectActionWrite, chunkId, token)
+        fsd.Expect(token, tsuki.ExpectActionWrite, chunkId)
 
         text := "This is chunk 2"
         request := tsuki.NewPostChunkRequest(chunkId, text, token)
@@ -142,7 +142,7 @@ func TestFS_ChunkReceive(t *testing.T) {
         nsConn.Reset()
         chunkId := "3"
         token := chunkId
-        fsd.Expect(tsuki.ExpectActionWrite, chunkId, token)
+        fsd.Expect(token, tsuki.ExpectActionWrite, chunkId)
 
         text := "test test foo bar"
         request := tsuki.NewPostChunkRequest(chunkId, text, token)
@@ -185,7 +185,7 @@ func TestFS_ChunkReceive(t *testing.T) {
         nsConn.Reset()
         chunkId := "1"
         token := chunkId
-        fsd.Expect(tsuki.ExpectActionWrite, chunkId, token)
+        fsd.Expect(token, tsuki.ExpectActionWrite, chunkId)
 
         text := "i'm overwritting existing chunk!"
         request := tsuki.NewPostChunkRequest(chunkId, text, token)
@@ -229,18 +229,64 @@ func TestFS_ReceiveExpect(t *testing.T) {
     }
 
     batch2 := []string{ "b", "c", "d" }
-    want = tsuki.ExpectActionWrite
 
     request = tsuki.NewExpectRequest("write", token, batch2)
     response = httptest.NewRecorder()
 
     fsd.ServeInner(response, request)
 
-    tsuki.AssertStatus(t, response.Code, http.StatusOK)
-    for _, id := range batch2 {
+    tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
+    for _, id := range batch1 {
         got := fsd.GetTokenExpectationForChunk(token, id)
         if  got != want {
             t.Errorf("2st request: token=%s chunk=%s, got action %v, want %v", token, id, got, want)
         }
     }
+}
+
+func TestFS_CancelExpect(t *testing.T) {
+    store := &tsuki.InMemoryChunkStorage {
+        Index: make(map[string]string),
+    }
+
+    nsConn := &tsuki.SpyNSConnector{}
+
+    fsd := tsuki.NewFileServer(store, nsConn)
+
+    token := "history"
+
+    // Send WRITE expect for token
+    batch := []string{"1", "2", "3", "4"}
+    request := tsuki.NewExpectRequest("write", token, batch)
+    response := httptest.NewRecorder()
+
+    fsd.ServeInner(response, request)
+
+    // WRITE chunks
+    request = tsuki.NewPostChunkRequest("1", "chunk1", token)
+    response = httptest.NewRecorder()
+    fsd.ServeClient(response, request)
+
+    request = tsuki.NewPostChunkRequest("3", "whatisthis", token)
+    response = httptest.NewRecorder()
+    fsd.ServeClient(response, request)
+
+    // Cancel token
+    request = tsuki.NewCancelTokenRequest(token)
+    response = httptest.NewRecorder()
+
+    fsd.ServeInner(response, request)
+
+    tsuki.AssertStatus(t, response.Code, http.StatusOK)
+
+    for _, id := range batch {
+        tsuki.AssertChunkDoesntExists(t, store, id)
+    }
+
+    // Try to WRITE again
+    request = tsuki.NewPostChunkRequest("2", "again??", token)
+    response = httptest.NewRecorder()
+    fsd.ServeClient(response, request)
+
+    tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
 }
