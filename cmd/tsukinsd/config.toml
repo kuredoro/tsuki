@@ -25,19 +25,13 @@ storatePrivatePort = 7001
 #port = 7001
 [[storage]]
 host = '10.0.0.1'
-port = 7001
 [[storage]]
 host = '10.0.0.2'
-port = 7001
 [[storage]]
 host = '10.0.0.3'
-port = 7001
 [[storage]]
 host = '10.0.0.4'
-port = 7001
 [[storage]]
 host = '10.0.0.5'
-port = 7001
 [[storage]]
 host = '10.0.0.6'
-port = 7001

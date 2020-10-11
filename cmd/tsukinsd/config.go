@@ -28,7 +28,6 @@ type Namenode struct {
 
 type storage struct {
 	Host string
-	Port int
 }
 
 func LoadConfig() (*Config, error) {
