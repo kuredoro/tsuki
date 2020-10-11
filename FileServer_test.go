@@ -5,15 +5,15 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-    "log"
-    "io/ioutil"
-    "os"
+	//"log"
+	//"io/ioutil"
+	"os"
 
 	"github.com/kureduro/tsuki"
 )
 
 func TestMain(m *testing.M) {
-	log.SetOutput(ioutil.Discard)
+	//log.SetOutput(ioutil.Discard)
 	os.Exit(m.Run())
 }
 
@@ -102,7 +102,8 @@ func TestFS_ChunkSend(t *testing.T) {
 
         fsd.ServeClient(response, request)
 
-        tsuki.AssertStatus(t, response.Code, http.StatusNotFound)
+        // The server should not allow such expects to pass...
+        tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
     })
 
     t.Run("get unexpected unregistered chunk",
@@ -208,8 +209,9 @@ func TestFS_ChunkReceive(t *testing.T) {
 func TestFS_ReceiveExpect(t *testing.T) {
     store := tsuki.NewInMemoryChunkStorage(
         map[string]string {
-            "0": "abracadabra",
-            "1": "watashihanekodesuka",
+            "a": "abracadabra",
+            "b": "watashihanekodesuka",
+            "c": "kimimonekodesuka",
     })
 
     nsConn := &tsuki.SpyNSConnector{}
@@ -317,23 +319,16 @@ func TestFS_ChunkPurge(t *testing.T) {
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
 
-        store.Wait()
+        time.Sleep(5 * time.Millisecond)
 
         tsuki.AssertChunkDoesntExists(t, store, "0")
     })
 
+        /*
     t.Run("purge chunk in use",
     func (t *testing.T) {
-        barrier := make(chan struct{})
 
-        go func() {
-            close(barrier)
-            _, closeChunk, _ := store.Get("1")
-            defer closeChunk()
-            time.Sleep(1 * time.Millisecond)
-        }()
-
-        <-barrier
+        store.Mu.RLock()
 
         request := tsuki.NewPurgeRequest("1")
         response := httptest.NewRecorder()
@@ -343,8 +338,13 @@ func TestFS_ChunkPurge(t *testing.T) {
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertChunkContents(t, store, "1", "isnotchunk1")
 
-        store.Wait()
+        time.Sleep(5 * time.Millisecond)
+
+        store.Mu.RUnlock()
+
+        time.Sleep(5 * time.Millisecond)
 
         tsuki.AssertChunkDoesntExists(t, store, "1")
     })
+        */
 }
