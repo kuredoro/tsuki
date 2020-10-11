@@ -5,9 +5,17 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+    "log"
+    "io/ioutil"
+    "os"
 
 	"github.com/kureduro/tsuki"
 )
+
+func TestMain(m *testing.M) {
+	log.SetOutput(ioutil.Discard)
+	os.Exit(m.Run())
+}
 
 func TestFS_ChunkSend(t *testing.T) {
     store := tsuki.NewInMemoryChunkStorage(
