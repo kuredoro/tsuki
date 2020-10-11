@@ -14,7 +14,7 @@ hardDeathTime = 10#180
 chunkSize = 2 # mb
 #heartBeatPort = 7001
 replicas = 4
-storatePrivatePort = 7001
+storagePrivatePort = 7001
 
 #[[storage]]
 #host = 'localhost'
