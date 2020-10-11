@@ -210,6 +210,26 @@ func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 	}
 }
 
+func (s *PoolInfo) PurgeChunks(id int, chunks []string) {
+	fs := s.StorageNodes[id]
+
+	jsonChunks, _ :=json.Marshal(chunks)
+
+	client := &http.Client{}
+
+	req, _ := http.NewRequest(
+		"POST",
+		fmt.Sprintf("http://%s:%d/purge", fs.Host, conf.Namenode.StoragePrivatePort),
+		bytes.NewBuffer(jsonChunks))
+
+	req.Header.Set("Content-Type", "application/json")
+	_, err := client.Do(req)
+	if err != nil {
+		// todo: add to queue
+		return
+	}
+}
+
 func (s *PoolInfo) IsDead(id int, soft bool) bool {
 	return soft && s.StorageNodes[id].GetStatus() == PARTIALLY_DEAD || !soft && s.StorageNodes[id].GetStatus() == DEAD
 }
