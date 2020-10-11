@@ -18,10 +18,11 @@ type NSConnector interface {
 
 type HTTPNSConnector struct {
     Addr string
+    httpAddr string
 }
 
 func (c *HTTPNSConnector) ReceivedChunk(id string) {
-    url := fmt.Sprintf("%s/confirm/receivedChunk?chunkID=%s", c.Addr, id)
+    url := fmt.Sprintf("%s/confirm/receivedChunk?chunkID=%s", c.httpAddr, id)
     log.Printf("ReceivedChunk: %s", url)
     go http.Get(url)
 }
@@ -32,6 +33,7 @@ func (c *HTTPNSConnector) GetNSAddr() string {
 
 func (c *HTTPNSConnector) SetNSAddr(addr string) {
     c.Addr = addr
+    c.httpAddr = "http://" + addr
 }
 
 func (c *HTTPNSConnector) IsNS(addr string) bool {
@@ -43,7 +45,11 @@ func (c *HTTPNSConnector) IsNS(addr string) bool {
 }
 
 func (c *HTTPNSConnector) Poll() {
-    go http.Get(c.Addr + "/pulse")
+    _, err := http.Get(c.httpAddr + "/pulse")
+
+    if err != nil {
+        log.Printf("warning: couldn't send hertbeat to %s", c.httpAddr + "/pulse")
+    }
 }
 
 

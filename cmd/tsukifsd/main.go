@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+    "os"
 	"log"
 	"net/http"
 	"strconv"
@@ -16,20 +18,28 @@ var ns string
 
 func init() {
     flag.IntVar(&port, "port", 7000, "port for clients")
-    flag.StringVar(&ns, "ns", "http://localhost:7071", "address of the name server")
+    flag.StringVar(&ns, "ns", "", "address of the name server")
 }
 
 func main() {
 
     flag.Parse()
 
+    if _, err := os.Stat(".tsukifs"); err == nil {
+        save, err := os.Open(".tsukifs")
+        if err != nil {
+            log.Fatal(err)
+        }
+        defer save.Close()
+
+        fmt.Fscanf(save, "%s", &ns)
+        log.Printf("Found .tsukifs: NS=%s", ns)
+    }
+
     addrForClients := ":" + strconv.Itoa(port)
     addrForInner := ":" + strconv.Itoa(port + 1)
 
     log.Printf("listening for clients at %s", addrForClients)
-
-    heart := tsuki.NewHeart(ns + "/pulse", 3 * time.Second)
-    go heart.Poll(-1)
 
     store := &tsuki.InMemoryChunkStorage{
         Index : map[string]string {
@@ -40,7 +50,11 @@ func main() {
         },
     }
 
-    nsConn := &tsuki.HTTPNSConnector{ Addr: ns }
+    nsConn := &tsuki.HTTPNSConnector{}
+    nsConn.SetNSAddr(ns)
+
+    heart := tsuki.NewHeart(nsConn, 3 * time.Second)
+    go heart.Poll(-1)
 
     server := tsuki.NewFileServer(store, nsConn)
 
