@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/BurntSushi/toml"
+	"time"
 )
 
 type Config struct {
@@ -11,16 +12,23 @@ type Config struct {
 }
 
 type Namenode struct {
-	Host string
-	Port int
-	TreeUpdatePeriod int64
-	TreeLogName string
-	TreeGobName string
+	Host              string
+	PublicPort        int
+	PrivatePort       int
+	TreeUpdatePeriod  int64
+	TreeLogName       string
+	TreeGobName       string
+	ChunkTableGobName string
+	SoftDeathTime     time.Duration
+	HardDeathTime     time.Duration
+	ChunkSize         int
+	Replicas          int
 }
+
 
 type storage struct {
 	Host string
-	Port int 
+	Port int
 }
 
 func LoadConfig() (*Config, error) {
