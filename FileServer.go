@@ -128,6 +128,11 @@ func (s *FileServer) Expect(token string, action ExpectAction, chunks ...string)
     }
 
     for _, id := range chunks {
+        // This if looks kinda crammed and out of context....
+        // What if we have more types of expect actions?
+        if action == ExpectActionRead && !s.chunks.Exists(id) {
+            return ErrChunkNotFound
+        }
         e.processedChunks[id] = false
     }
 

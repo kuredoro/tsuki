@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"reflect"
 	"strings"
@@ -15,46 +16,33 @@ import (
 
 type InMemoryChunkStorage struct {
     Index map[string]string
-    mu sync.RWMutex
+    Mu sync.RWMutex
     accessCount sync.WaitGroup
-    atLeastOneCall chan struct{}
     callsPerformed int
 }
 
 func NewInMemoryChunkStorage(index map[string]string) *InMemoryChunkStorage {
     return &InMemoryChunkStorage {
         Index: index,
-        atLeastOneCall: make(chan struct{}),
-    }
-}
-
-func (s *InMemoryChunkStorage) breakBarrier() {
-    s.mu.Lock()
-    defer s.mu.Unlock()
-
-    if s.callsPerformed == 0 {
-        close(s.atLeastOneCall)
-        s.callsPerformed++
     }
 }
 
 func (s *InMemoryChunkStorage) Get(id string) (io.Reader, func(), error) {
-    s.breakBarrier()
-
     if !s.Exists(id) {
         return nil, func(){}, ErrChunkNotFound
     }
 
     s.accessCount.Add(1)
 
-    s.mu.RLock()
-    defer s.mu.RUnlock()
+    s.Mu.RLock()
+    defer s.Mu.RUnlock()
 
     chunk := s.Index[id]
 
     buf := bytes.NewBufferString(chunk)
 
     closeFunc := func() {
+        log.Println("closed")
         s.accessCount.Done()
     }
 
@@ -62,16 +50,14 @@ func (s *InMemoryChunkStorage) Get(id string) (io.Reader, func(), error) {
 }
 
 func (s *InMemoryChunkStorage) Create(id string) (io.Writer, func(), error) {
-    s.breakBarrier()
-
     if s.Exists(id) {
         return nil, func(){}, ErrChunkExists
     }
 
     s.accessCount.Add(1)
 
-    s.mu.Lock()
-    defer s.mu.Unlock()
+    s.Mu.Lock()
+    defer s.Mu.Unlock()
 
     s.Index[id] = ""
 
@@ -92,28 +78,25 @@ func (s *InMemoryChunkStorage) Exists(id string) (exists bool) {
     s.accessCount.Add(1)
     defer s.accessCount.Done()
 
-    s.mu.RLock()
-    defer s.mu.RUnlock()
+    s.Mu.RLock()
+    defer s.Mu.RUnlock()
 
     _, exists = s.Index[id]
     return
 }
 
 func (s *InMemoryChunkStorage) Remove(id string) error {
-    s.breakBarrier()
-
     s.accessCount.Add(1)
     defer s.accessCount.Done()
 
-    s.mu.Lock()
-    defer s.mu.Unlock()
+    s.Mu.Lock()
+    defer s.Mu.Unlock()
 
     delete(s.Index, id)
     return nil
 }
 
 func (s *InMemoryChunkStorage) Wait() {
-    <-s.atLeastOneCall
     s.accessCount.Wait()
 }
 
