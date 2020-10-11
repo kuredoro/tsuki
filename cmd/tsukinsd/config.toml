@@ -13,7 +13,7 @@ hardDeathTime = 10#180
 
 chunkSize = 2 # mb
 #heartBeatPort = 7001
-replicas = 2
+replicas = 4
 
 #[[storage]]
 #host = 'localhost'
@@ -30,4 +30,13 @@ host = '10.0.0.2'
 port = 7001
 [[storage]]
 host = '10.0.0.3'
+port = 7001
+[[storage]]
+host = '10.0.0.4'
+port = 7001
+[[storage]]
+host = '10.0.0.5'
+port = 7001
+[[storage]]
+host = '10.0.0.6'
 port = 7001

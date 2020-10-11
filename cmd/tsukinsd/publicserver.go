@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
@@ -89,9 +88,7 @@ func upload(w http.ResponseWriter, r *http.Request) {
 	chunkNum := int(math.Ceil(float64(size) / 1024 / 1024 / float64(conf.Namenode.ChunkSize)))
 	var chunks []ChunkMessage
 
-	tokenBytes := make([]byte, 16)
-	rand.Read(tokenBytes)
-	token, _ := uuid.FromBytes(tokenBytes)
+	token := generateToken()
 
 	//fmt.Printf("%q", string(tokenBytes))
 
@@ -117,9 +114,9 @@ func upload(w http.ResponseWriter, r *http.Request) {
 	//fmt.Printf("%v", inversed)
 	//fmt.Printf("%v\n", t)
 	//fmt.Printf("%v\n", ct)
-	json.NewEncoder(w).Encode(&ClientMessage{Status: "OK", Message: "Go upload there", Chunks: chunks, Token: token.String()})
+	json.NewEncoder(w).Encode(&ClientMessage{Status: "OK", Message: "Go upload there", Chunks: chunks, Token: token})
 
-	go SendChunksToFS(inversed, token.String())
+	go SendChunksToFS(inversed, token)
 	// requests to fs's /expect/write?token JSON {chunks: []int}
 	// confirmation from fs's /confirm?chunkID=<chunkID>
 	// or client says /fserror?token=<token> <- for now error on client
