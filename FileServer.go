@@ -182,8 +182,7 @@ func (s *FileServer) ServeInner(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *FileServer) ExpectHandler(w http.ResponseWriter, r *http.Request) {
-    // TODO: Change to /expect/<token>?action=...
-    actionStr := strings.TrimPrefix(r.URL.Path, "/expect/")
+    actionStr := r.URL.Query().Get("action")
     action, correct := strToExpectAction[actionStr]
 
     if !correct {
@@ -191,8 +190,10 @@ func (s *FileServer) ExpectHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    token := r.URL.Query().Get("token")
+    token := strings.TrimPrefix(r.URL.Path, "/expect/")
 
+    // TODO: This check may be unneeded when trailing slash is omitted when
+    // nothing follows it.
     if token == "" {
         w.WriteHeader(http.StatusBadRequest)
         return
