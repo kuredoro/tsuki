@@ -3,10 +3,8 @@ package main
 import (
 	"fmt"
 	"github.com/gorilla/mux"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -46,6 +44,7 @@ func (s *PoolInfo) HeartbeatManager(soft bool) {
 				s.ChangeStatus(peerId, liveStatus)
 				nextDead, deathTime = s.GetFSWithOldestPulse(soft)
 				//log.Printf("%v %v %d %v", soft, deathTime, nextDead, s.StorageNodes[peerId].Status)
+				log.Printf("active %v deathTime %v nextDead %v status %d peerid %v", s.Alive, deathTime, nextDead, s.StorageNodes[peerId].Status, peerId)
 			} else if peerId == nextDead || nextDead == -1 {
 				nextDead, deathTime = s.GetFSWithOldestPulse(soft)
 				//log.Printf("soft %v deathTime %v nextDead %v status %d peerid %v", soft, deathTime, nextDead, s.StorageNodes[peerId].Status, peerId)
@@ -92,23 +91,23 @@ func (s *PoolInfo) GetFSWithOldestPulse(soft bool) (int, time.Duration) {
 }
 
 func ExpectFromFS(chunk *Chunk, sender string, receiver *FileServerInfo) {
+	token := generateToken()
+	_, _ = http.NewRequest(
+		"GET",
+		fmt.Sprintf("http://%s:%d/write?token=%s&chunkID=%s", receiver.Host, receiver.Port, token, chunk.ChunkID),
+		nil)
+
 	req, err := http.NewRequest(
 		"GET",
-		fmt.Sprintf("http://%s:%d/expect/write?fs=true&sender=%s&chunkID=%s", receiver.Host, receiver.Port, sender, chunk.ChunkID),
+		fmt.Sprintf("http://%s:%d/expect/write?token=%s&chunkID=%s", receiver.Host, receiver.Port, token, chunk.ChunkID),
 		nil)
 
 	client := &http.Client{}
-	resp, err := client.Do(req)
+	_, err = client.Do(req)
 	if err != nil {
 		// cancel token
 		return
 	}
-
-	fmt.Println("response Status:", resp.Status)
-	fmt.Println("response Headers:", resp.Header)
-	body, _ := ioutil.ReadAll(resp.Body)
-	fmt.Println("response Body:", string(body))
-	resp.Body.Close()
 }
 
 func pulse(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +131,8 @@ func confirmChunk(w http.ResponseWriter, r *http.Request) {
 	// chunk is ready at r.RemoteAddr
 	// we can set it as ready on remote addr and start sending to other servers
 	chunkID := r.URL.Query().Get("chunkID")
-	remoteAddr := strings.Split(r.RemoteAddr, ":")[0]
+	remoteAddr := r.Header.Get("addr")
+	//remoteAddr := strings.Split(r.RemoteAddr, ":")[0]
 	log.Printf("Got ready chunk %s from %s", chunkID, remoteAddr)
 
 	chunk, ok := ct.Table[chunkID]
@@ -158,7 +158,7 @@ func confirmChunk(w http.ResponseWriter, r *http.Request) {
 	delete(file.Pending, chunkID)
 
 	chunk.ReadyReplicas += 1
-	remainingReplicas := conf.Namenode.Replicas - chunk.ReadyReplicas
+	remainingReplicas := conf.Namenode.Replicas - chunk.AllReplicas
 
 	senders := []string{}
 	for fs, status := range chunk.Statuses {
@@ -170,15 +170,18 @@ func confirmChunk(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	remainingReplicas = Min(remainingReplicas, len(senders))
 	receivers := storages.SelectSeveralExcept(senders, remainingReplicas)
 
-	if len(receivers) < remainingReplicas {
+	if len(receivers) == 0 && chunk.AllReplicas < conf.Namenode.Replicas {
 		log.Printf("Chunk %s cannot be replicated more, there is no free fs left", chunkID)
 		// todo: add to some queue that is subscribed to events when some fs are up
 	}
 
+	chunk.AllReplicas += len(receivers)
+
 	for i, receiver := range receivers {
-		ExpectFromFS(chunk, senders[i], receiver)
+		go ExpectFromFS(chunk, senders[i], receiver)
 		log.Printf("Sending chunk %s from %s to %v", chunkID, senders[i], receiver)
 		chunk.AddFSToChunk(receiver)
 	}
@@ -198,3 +201,4 @@ func StartPrivateServer() {
 
 	http.ListenAndServe(fmt.Sprintf("%s:%d", conf.Namenode.Host, conf.Namenode.PrivatePort), r)
 }
+

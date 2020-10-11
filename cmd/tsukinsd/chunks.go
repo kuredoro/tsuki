@@ -20,6 +20,7 @@ type Chunk struct {
 	Status        []int
 	Statuses      map[string]int
 	ReadyReplicas int
+	AllReplicas   int
 }
 
 type ChunkTable struct {
@@ -29,11 +30,13 @@ type ChunkTable struct {
 
 func (ct *ChunkTable) AddChunk(chunkID string, file string, initNode *FileServerInfo) bool {
 	chunk := Chunk{
-		ChunkID:  chunkID,
-		File:     file,
-		Nodes:    map[string]*FileServerInfo{initNode.Host : initNode},
-		Status:   append([]int{PENDING}),
-		Statuses: map[string]int{initNode.Host: PENDING}}
+		ChunkID:     chunkID,
+		File:        file,
+		Nodes:       map[string]*FileServerInfo{initNode.Host: initNode},
+		Status:      append([]int{PENDING}),
+		Statuses:    map[string]int{initNode.Host: PENDING},
+		AllReplicas: 1,
+	}
 
 	ct.Table[chunkID] = &chunk
 
