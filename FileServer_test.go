@@ -7,15 +7,15 @@ import (
 	"testing"
 	"time"
 
-	//"log"
-	//"io/ioutil"
+	"log"
+	"io/ioutil"
 	"os"
 
 	"github.com/kureduro/tsuki"
 )
 
 func TestMain(m *testing.M) {
-	//log.SetOutput(ioutil.Discard)
+	log.SetOutput(ioutil.Discard)
 	os.Exit(m.Run())
 }
 
@@ -361,7 +361,7 @@ func TestFS_ChunkPurge(t *testing.T) {
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
 
-        time.Sleep(5 * time.Millisecond)
+        time.Sleep(20 * time.Millisecond)
 
         // Now delete
         tsuki.AssertChunkDoesntExists(t, store, chunkId)
@@ -446,4 +446,8 @@ func TestFS_Probe(t *testing.T) {
     if spyConn.GetNSAddr() != "addr1" {
         t.Errorf("subsequent probes changed NS server")
     }
+}
+
+func TestFS_Replicate(t *testing.T) {
+    // TODO: untested
 }
