@@ -80,6 +80,7 @@ type ChunkDB interface {
     Get(id string) (io.Reader, func(), error)
     Create(id string) (io.Writer, func(), error)
     Exists(id string) bool
+    // Should be concurrency safe
     Remove(id string) error
 }
 
@@ -106,6 +107,7 @@ func NewFileServer(store ChunkDB, nsConn NSConnector) (s *FileServer) {
     innerRouter := http.NewServeMux()
     innerRouter.Handle("/expect/", http.HandlerFunc(s.ExpectHandler))
     innerRouter.Handle("/cancelToken", http.HandlerFunc(s.CancelTokenHandler))
+    innerRouter.Handle("/purge", http.HandlerFunc(s.PurgeHandler))
 
     s.innerHandler = innerRouter
 
@@ -256,6 +258,23 @@ func (s *FileServer) CancelTokenHandler(w http.ResponseWriter, r *http.Request) 
     e.action = ExpectActionNothing
 
     s.expectations.Remove(token)
+
+    w.WriteHeader(http.StatusOK)
+}
+
+func (s *FileServer) PurgeHandler(w http.ResponseWriter, r *http.Request) {
+    buf := &bytes.Buffer{}
+    io.Copy(buf, r.Body)
+
+    var chunks []string
+    if err := json.Unmarshal(buf.Bytes(), &chunks); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        return
+    }
+
+    for _, id := range chunks {
+        go s.chunks.Remove(id)
+    }
 
     w.WriteHeader(http.StatusOK)
 }
