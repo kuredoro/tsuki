@@ -75,20 +75,25 @@ func (s *PoolInfo) SelectSeveralExcept(except []string, num int) []*FileServerIn
 	for _, host := range except {
 		exceptMap[host] = 1
 	}
-	if s.Alive-len(except) < num {
-		num = s.Alive - len(except)
-	}
+	//if s.Alive-len(except) < num {
+	//	num = s.Alive - len(except)
+	//}
 
 	selected := []*FileServerInfo{}
 
 	next := s.StorageNodes[s.Next]
+	start := next
 	for i := 0; i < num; {
-		if !next.Alive || exceptMap[next.Host] == 0 {
+		if !next.Alive || exceptMap[next.Host] == 1 {
 		} else {
 			selected = append(selected, next)
 			i++
 		}
 		next = s.StorageNodes[next.NextAlive]
+
+		if &next == &start {
+			break
+		}
 	}
 
 	return selected
@@ -147,20 +152,37 @@ func SendChunksToFS(inversed map[string][]string, token string) {
 
 func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 	node := s.StorageNodes[id]
-	node.Status = status
 
 	node.mu.Lock()
+	prevState := node.Alive
+	node.Status = status
 	node.Alive = status == LIVE
 	node.mu.Unlock()
+
+	changedState := node.Alive && !(prevState && node.Alive)
 
 	if node.Alive {
 		num := len(s.StorageNodes)
 		s.setNewAlive(id, ((id-1)%num+num)%num)
+
+		s.mu.Lock()
+		s.Alive += 1
+		s.mu.Unlock()
+
 	} else {
+		if changedState {
+			s.mu.Lock()
+			s.Alive -= 1
+			s.mu.Unlock()
+		}
 		s.setNewAliveDead(id)
 	}
 }
 
 func (s *PoolInfo) IsDead(id int, soft bool) bool {
 	return soft && s.StorageNodes[id].Status == PARTIALLY_DEAD || !soft && s.StorageNodes[id].Status == DEAD
+}
+
+func (s *PoolInfo) NodeIsDead(id int) {
+
 }
