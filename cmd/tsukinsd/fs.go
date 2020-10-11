@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -49,7 +48,7 @@ func InitFServers(conf *Config) *PoolInfo {
 		storage.StorageNodes = append(storage.StorageNodes,
 			&FileServerInfo{
 				Host:      storageNode.Host,
-				Port:      storageNode.Port,
+				Port:      conf.Namenode.StoragePrivatePort,
 				Alive:     false,
 				NextAlive: (i + 1) % len(conf.Storage),
 				ID:        i,
@@ -171,7 +170,7 @@ func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 	req, _ = http.NewRequest(
 		"GET",
 		fmt.Sprintf("http://%s:%d/replicate?token=%s&ip=%s",
-			sender, conf.Namenode.StoragePrivatePort, token, receiver.Host+":"+strconv.Itoa(receiver.Port)),
+			sender, conf.Namenode.StoragePrivatePort, token, fmt.Sprintf("%s:%d", receiver.Host, receiver.Port)),
 		bytes.NewBuffer(json))
 	req.Header.Set("Content-Type", "application/json")
 	_, err = client.Do(req)
