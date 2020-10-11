@@ -15,9 +15,9 @@ const (
 type Chunk struct {
 	ChunkID string
 	File    string
-	//Nodes         []*FileServerInfo
-	Nodes         map[string]*FileServerInfo
-	Status        []int
+	//FServers         []*FileServerInfo
+	FServers      map[string]*FileServerInfo
+	Status        int
 	Statuses      map[string]int
 	ReadyReplicas int
 	AllReplicas   int
@@ -32,8 +32,8 @@ func (ct *ChunkTable) AddChunk(chunkID string, file string, initNode *FileServer
 	chunk := Chunk{
 		ChunkID:     chunkID,
 		File:        file,
-		Nodes:       map[string]*FileServerInfo{initNode.Host: initNode},
-		Status:      append([]int{PENDING}),
+		FServers:    map[string]*FileServerInfo{initNode.Host: initNode},
+		Status:      PENDING,
 		Statuses:    map[string]int{initNode.Host: PENDING},
 		AllReplicas: 1,
 	}
@@ -44,7 +44,7 @@ func (ct *ChunkTable) AddChunk(chunkID string, file string, initNode *FileServer
 }
 
 func (c *Chunk) AddFSToChunk(fs *FileServerInfo) {
-	c.Nodes[fs.Host] = fs
+	c.FServers[fs.Host] = fs
 	c.Statuses[fs.Host] = PENDING
 }
 
@@ -55,6 +55,25 @@ func (ct *ChunkTable) SaveChunkTable(saveTo string) bool {
 
 	encoder.Encode(ct)
 	return true
+}
+
+func (ct *ChunkTable) PurgeChunks(chunks []string) {
+	cock := map[int][]string{}
+	for _, chunkName := range chunks {
+		chunk := ct.Table[chunkName]
+
+		chunk.Status = OBSOLETE
+		for _, fs := range chunk.FServers {
+			if fs.GetStatus() == LIVE {
+				// todo: add to queue if not alive
+				cock[fs.ID] = append(cock[fs.ID], chunk.ChunkID)
+			}
+		}
+	}
+
+	for key, value := range cock {
+		storages.PurgeChunks(key, value)
+	}
 }
 
 func LoadChunkTable(openFrom string) *ChunkTable {
@@ -74,5 +93,5 @@ func (ct *ChunkTable) String() string {
 }
 
 func (c *Chunk) String() string {
-	return fmt.Sprintf("Chunk{ChunkID: %s, File: %s, Nodes: %v, Status: %d}", c.ChunkID, c.File, c.Nodes, c.Status)
+	return fmt.Sprintf("Chunk{ChunkID: %s, File: %s, FServers: %v, Status: %d}", c.ChunkID, c.File, c.FServers, c.Status)
 }

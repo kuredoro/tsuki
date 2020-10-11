@@ -36,7 +36,7 @@ func InitTree(conf Namenode) *Tree {
 }
 
 func (t *Tree) String() string {
-	return fmt.Sprintf("Tree{Nodes: %v}", t.Nodes)
+	return fmt.Sprintf("Tree{FServers: %v}", t.Nodes)
 }
 
 func (node *Node) String() string {
@@ -81,18 +81,18 @@ func (t *Tree) CreateFile(fileName string) (*Node, error) {
 	return newFile, nil
 }
 
-func (t *Tree) RemoveFile(address string) error {
+func (t *Tree) RemoveFile(address string) (*Node, error) {
 	address, matched := CleanAddress(address)
 
 	if !matched {
-		return fmt.Errorf("wrong file name format")
+		return nil, fmt.Errorf("wrong file name format")
 	}
 
 	exists, isDirectory := t.PathExists(address)
 	if !exists {
-		return fmt.Errorf("file does not exist")
+		return nil, fmt.Errorf("file does not exist")
 	} else if isDirectory {
-		return fmt.Errorf("cannot remove directory")
+		return nil, fmt.Errorf("cannot remove directory")
 	}
 
 	t.Nodes[address].Removed = true // lazy removing
@@ -103,7 +103,7 @@ func (t *Tree) RemoveFile(address string) error {
 	t.CommitUpdate("rmfile", address)
 
 
-	return nil
+	return t.Nodes[address], nil
 }
 
 func (t *Tree) CreateDirectory(address string) error {
@@ -244,7 +244,7 @@ func (t *Tree) MoveFile(fileToMove string, moveTo string) error {
 		return fmt.Errorf("impossible to move file, %e", err)
 	}
 
-	_ = t.RemoveFile(fileToMove)
+	_, _ = t.RemoveFile(fileToMove)
 
 	return nil
 }
