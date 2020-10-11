@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -150,6 +151,36 @@ func SendChunksToFS(inversed map[string][]string, token string) {
 	}
 }
 
+func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
+	client := &http.Client{}
+	json := []byte(fmt.Sprintf("[%s]", chunk.ChunkID))
+
+	token := generateToken()
+
+	req, _ := http.NewRequest(
+		"GET",
+		fmt.Sprintf("http://%s:%d/expect?token=%s&action=write", receiver.Host, conf.Namenode.StoragePrivatePort, token),
+		bytes.NewBuffer(json))
+	req.Header.Set("Content-Type", "application/json")
+	_, err := client.Do(req)
+	if err != nil {
+		// cancel token (cancelToken)
+		return
+	}
+
+	req, _ = http.NewRequest(
+		"GET",
+		fmt.Sprintf("http://%s:%d/replicate?token=%s&ip=%s",
+			sender, conf.Namenode.StoragePrivatePort, token, receiver.Host+":"+strconv.Itoa(receiver.Port)),
+		bytes.NewBuffer(json))
+	req.Header.Set("Content-Type", "application/json")
+	_, err = client.Do(req)
+	if err != nil {
+		// cancel token (cancelToken)
+		return
+	}
+}
+
 func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 	node := s.StorageNodes[id]
 
@@ -180,7 +211,13 @@ func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 }
 
 func (s *PoolInfo) IsDead(id int, soft bool) bool {
-	return soft && s.StorageNodes[id].Status == PARTIALLY_DEAD || !soft && s.StorageNodes[id].Status == DEAD
+	return soft && s.StorageNodes[id].GetStatus() == PARTIALLY_DEAD || !soft && s.StorageNodes[id].GetStatus() == DEAD
+}
+
+func (fs *FileServerInfo) GetStatus() FSStatus {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return fs.Status
 }
 
 func (s *PoolInfo) NodeIsDead(id int) {

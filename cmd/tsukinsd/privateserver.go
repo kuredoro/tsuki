@@ -44,7 +44,7 @@ func (s *PoolInfo) HeartbeatManager(soft bool) {
 				s.ChangeStatus(peerId, liveStatus)
 				nextDead, deathTime = s.GetFSWithOldestPulse(soft)
 				//log.Printf("%v %v %d %v", soft, deathTime, nextDead, s.StorageNodes[peerId].Status)
-				log.Printf("active %v deathTime %v nextDead %v status %d peerid %v", s.Alive, deathTime, nextDead, s.StorageNodes[peerId].Status, peerId)
+				log.Printf("active %v deathTime %v nextDead %v status %d peerid %v", s.Alive, deathTime, nextDead, s.StorageNodes[peerId].GetStatus(), peerId)
 			} else if peerId == nextDead || nextDead == -1 {
 				nextDead, deathTime = s.GetFSWithOldestPulse(soft)
 				//log.Printf("soft %v deathTime %v nextDead %v status %d peerid %v", soft, deathTime, nextDead, s.StorageNodes[peerId].Status, peerId)
@@ -81,33 +81,13 @@ func (s *PoolInfo) GetFSWithOldestPulse(soft bool) (int, time.Duration) {
 
 	oldestDuration := time.Duration(0)
 	for i, fs := range s.StorageNodes {
-		if since := time.Since(fs.LastPulse); since > oldestDuration && (soft && fs.Status == LIVE || !soft && fs.Status != DEAD) {
+		if since := time.Since(fs.LastPulse); since > oldestDuration && (soft && fs.GetStatus() == LIVE || !soft && fs.GetStatus() != DEAD) {
 			oldestDuration = since
 			oldest = i
 		}
 	}
 
 	return oldest, period - oldestDuration
-}
-
-func ExpectFromFS(chunk *Chunk, sender string, receiver *FileServerInfo) {
-	token := generateToken()
-	_, _ = http.NewRequest(
-		"GET",
-		fmt.Sprintf("http://%s:%d/write?token=%s&chunkID=%s", receiver.Host, receiver.Port, token, chunk.ChunkID),
-		nil)
-
-	req, err := http.NewRequest(
-		"GET",
-		fmt.Sprintf("http://%s:%d/expect/write?token=%s&chunkID=%s", receiver.Host, receiver.Port, token, chunk.ChunkID),
-		nil)
-
-	client := &http.Client{}
-	_, err = client.Do(req)
-	if err != nil {
-		// cancel token
-		return
-	}
 }
 
 func pulse(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +161,7 @@ func confirmChunk(w http.ResponseWriter, r *http.Request) {
 	chunk.AllReplicas += len(receivers)
 
 	for i, receiver := range receivers {
-		go ExpectFromFS(chunk, senders[i], receiver)
+		go Replicate(chunk, senders[i], receiver)
 		log.Printf("Sending chunk %s from %s to %v", chunkID, senders[i], receiver)
 		chunk.AddFSToChunk(receiver)
 	}
