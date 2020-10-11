@@ -51,6 +51,10 @@ func (s *InMemoryChunkStorage) Exists(id string) (exists bool) {
     return
 }
 
+func (s *InMemoryChunkStorage) Remove(id string) error {
+    delete(s.Index, id)
+    return nil
+}
 
 func NewGetChunkRequest(id, token string) *http.Request {
     req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/chunks/%s?token=%s", id, token), nil)
@@ -70,6 +74,12 @@ func NewExpectRequest(method, token string, chunks []string) *http.Request {
     return req
 }
 
+func NewCancelTokenRequest(token string) *http.Request {
+    url := fmt.Sprintf("/cancelToken?token=%s", token)
+    req, _ := http.NewRequest(http.MethodPost, url, nil)
+    return req
+}
+
 func AssertChunkContents(t *testing.T, chunks ChunkDB, id, want string) {
     t.Helper()
 
@@ -86,6 +96,14 @@ func AssertChunkContents(t *testing.T, chunks ChunkDB, id, want string) {
 
     if got.String() != want {
         t.Errorf("got chunk contents %q, want %q", got, want)
+    }
+}
+
+func AssertChunkDoesntExists(t *testing.T, chunks ChunkDB, id string) {
+    t.Helper()
+
+    if chunks.Exists(id) {
+        t.Errorf("chunk %v exists, but it shouldn't", id)
     }
 }
 

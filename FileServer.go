@@ -1,12 +1,14 @@
 package tsuki
 
 import (
-    "log"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 type ChunkError string
@@ -34,12 +36,51 @@ var strToExpectAction = map[string]ExpectAction {
 // token -> chunkId -> ExpectAction
 // Putting token first makes it more cache-friendly, since there much less
 // tokens than chunks.
-type TokenExpectations map[string]map[string]ExpectAction
+//type TokenExpectations map[string]map[string]ExpectAction
+type TokenExpectation struct {
+    action ExpectAction
+    processedChunks map[string]bool
+    pendingCount int
+    mu sync.RWMutex
+}
+
+type ExpectationDB struct {
+    index map[string]*TokenExpectation
+    mu sync.RWMutex
+}
+
+func NewExpectationDB() *ExpectationDB {
+    return &ExpectationDB {
+        index: make(map[string]*TokenExpectation),
+    }
+}
+
+func (e *ExpectationDB) Get(token string) *TokenExpectation {
+    e.mu.RLock()
+    defer e.mu.RUnlock()
+
+    return e.index[token]
+}
+
+func (e *ExpectationDB) Set(token string, exp *TokenExpectation) {
+    e.mu.Lock()
+    defer e.mu.Unlock()
+
+    e.index[token] = exp
+}
+
+func (e *ExpectationDB) Remove(token string) {
+    e.mu.Lock()
+    defer e.mu.Unlock()
+
+    delete(e.index, token)
+}
 
 type ChunkDB interface {
     Get(id string) (io.Reader, func(), error)
     Create(id string) (io.Writer, func(), error)
     Exists(id string) bool
+    Remove(id string) error
 }
 
 type NSConnector interface {
@@ -48,57 +89,105 @@ type NSConnector interface {
 
 type FileServer struct {
     chunks ChunkDB
-    expectations TokenExpectations
+    expectations *ExpectationDB
     nsConn NSConnector
+
+    // clientHandler ...also, maybe
+    innerHandler http.Handler
 }
 
-func NewFileServer(store ChunkDB, nsConn NSConnector) *FileServer {
-    return &FileServer{
+func NewFileServer(store ChunkDB, nsConn NSConnector) (s *FileServer) {
+    s = &FileServer{
         chunks: store,
-        expectations: make(TokenExpectations),
+        expectations: NewExpectationDB(),
         nsConn: nsConn,
     }
+
+    innerRouter := http.NewServeMux()
+    innerRouter.Handle("/expect/", http.HandlerFunc(s.ExpectHandler))
+    innerRouter.Handle("/cancelToken", http.HandlerFunc(s.CancelTokenHandler))
+
+    s.innerHandler = innerRouter
+
+    return
 }
 
-func (s *FileServer) Expect(action ExpectAction, id, token string) {
+func (s *FileServer) Expect(token string, action ExpectAction, chunks ...string) error {
     // TODO: timeout
-    _, exists := s.expectations[token]
-    if !exists {
-        s.expectations[token] = make(map[string]ExpectAction)
+    e := s.expectations.Get(token)
+    if e != nil {
+        return fmt.Errorf("expect group already exists, token=%s", token)
     }
 
-    s.expectations[token][id] = action
+    e = &TokenExpectation {
+        action: action,
+        processedChunks: make(map[string]bool),
+        pendingCount: len(chunks),
+    }
+
+    for _, id := range chunks {
+        e.processedChunks[id] = false
+    }
+
+    s.expectations.Set(token, e)
+
+    return nil
 }
 
 func (s *FileServer) fullfilExpectation(token, id string) {
     // Expects correct token and id
 
-    delete(s.expectations[token], id)
+    e := s.expectations.Get(token)
 
-    if len(s.expectations[token]) == 0 {
-        delete(s.expectations, token)
+    e.mu.Lock()
+    defer e.mu.Unlock()
+
+    _, chunkExists := e.processedChunks[id]
+    if !chunkExists {
+        log.Printf("warning: attempt to fullfil expectation for wrong chunk. token=%s, chunk=%s", token, id)
+        return
+    }
+
+    e.processedChunks[id] = true
+    e.pendingCount--
+
+    if e.pendingCount == 0 {
+        s.expectations.Remove(token)
     }
 }
 
 func (s *FileServer) GetTokenExpectationForChunk(token, id string) ExpectAction {
-    _, exists := s.expectations[token]
-    if !exists {
+    e := s.expectations.Get(token)
+    if e == nil {
         return ExpectActionNothing
     }
 
-    action, exists := s.expectations[token][id]
-    if !exists {
+    e.mu.RLock()
+    defer e.mu.RUnlock()
+
+    processed, authorized := e.processedChunks[id]
+    if !authorized || processed {
         return ExpectActionNothing
     }
 
-    return action
+    return e.action
 }
 
 func (s *FileServer) ServeInner(w http.ResponseWriter, r *http.Request) {
     log.Printf("ServeInner: %s", r.URL)
 
+    s.innerHandler.ServeHTTP(w, r)
+}
+
+func (s *FileServer) ExpectHandler(w http.ResponseWriter, r *http.Request) {
+    // TODO: Change to /expect/<token>?action=...
     actionStr := strings.TrimPrefix(r.URL.Path, "/expect/")
-    action := strToExpectAction[actionStr]
+    action, correct := strToExpectAction[actionStr]
+
+    if !correct {
+        w.WriteHeader(http.StatusBadRequest)
+        return
+    }
 
     token := r.URL.Query().Get("token")
 
@@ -116,11 +205,57 @@ func (s *FileServer) ServeInner(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    for _, chunkId := range chunks {
-        s.Expect(action, chunkId, token)
+    err := s.Expect(token, action, chunks...)
+    if err != nil {
+        w.WriteHeader(http.StatusForbidden)
+        fmt.Fprint(w, err)
+        return
     }
 
     log.Printf("%s : %v", r.URL, chunks)
+
+    w.WriteHeader(http.StatusOK)
+}
+
+func (s *FileServer) CancelTokenHandler(w http.ResponseWriter, r *http.Request) {
+    token := r.URL.Query().Get("token")
+
+    if token == "" {
+        w.WriteHeader(http.StatusBadRequest)
+        return
+    }
+
+    e := s.expectations.Get(token)
+    if e == nil {
+        w.WriteHeader(http.StatusOK)
+        return
+    }
+
+    e.mu.Lock()
+    defer e.mu.Unlock()
+
+
+    toUndo := make([]string, 0, len(e.processedChunks) - e.pendingCount)
+    for k, v := range e.processedChunks {
+        if v {
+            toUndo = append(toUndo, k)
+        }
+    }
+
+    if e.action == ExpectActionWrite && len(toUndo) != 0 {
+        // Remove blocks
+        for _, id := range toUndo {
+            // TODO: Start go routines
+            err := s.chunks.Remove(id)
+            if err != nil {
+                log.Fatal(err)
+            }
+        }
+    }
+
+    e.action = ExpectActionNothing
+
+    s.expectations.Remove(token)
 
     w.WriteHeader(http.StatusOK)
 }
