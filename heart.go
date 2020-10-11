@@ -42,9 +42,9 @@ type Heart struct {
     Sleeper Sleeper
 }
 
-func NewHeart(pollAddr string, sleepFor time.Duration) *Heart {
+func NewHeart(poller Poller, sleepFor time.Duration) *Heart {
     return &Heart{
-        Poller: &HTTPPoller{ address: pollAddr },
+        Poller: poller,
         Sleeper: &ConfigurableSleeper{ 
             Duration: sleepFor, 
             SleepFunc: time.Sleep,
