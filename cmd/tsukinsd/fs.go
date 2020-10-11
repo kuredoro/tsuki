@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
@@ -26,7 +30,7 @@ type FileServerInfo struct {
 }
 
 type PoolInfo struct {
-	mu        sync.Mutex
+	mu             sync.Mutex
 	StorageNodes   []*FileServerInfo
 	SoftPulseQueue chan int
 	HardPulseQueue chan int
@@ -109,7 +113,7 @@ func (s *PoolInfo) setNewAlive(newAliveID int, cur int) {
 	s.mu.Unlock()
 
 	if !setOne {
-		if cur != len(s.StorageNodes) - 1 {
+		if cur != len(s.StorageNodes)-1 {
 			s.setNewAlive(newAliveID, len(s.StorageNodes)-1)
 		} else {
 			// no alive node; die
@@ -118,6 +122,28 @@ func (s *PoolInfo) setNewAlive(newAliveID int, cur int) {
 	}
 }
 
+func SendChunksToFS(inversed map[string][]string, token string) {
+	for host, chunks := range inversed {
+		jsonStr, _ := json.Marshal(chunks)
+		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/expect/write?token=%s", host, token), bytes.NewBuffer(jsonStr))
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			// cancel token
+			return
+		}
+
+		fmt.Println("response Status:", resp.Status)
+		fmt.Println("response Headers:", resp.Header)
+		body, _ := ioutil.ReadAll(resp.Body)
+		fmt.Println("response Body:", string(body))
+		resp.Body.Close()
+
+		// if any error here die
+	}
+}
 
 func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 	node := s.StorageNodes[id]
@@ -129,7 +155,7 @@ func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 
 	if node.Alive {
 		num := len(s.StorageNodes)
-		s.setNewAlive(id, ((id - 1) % num + num) % num)
+		s.setNewAlive(id, ((id-1)%num+num)%num)
 	} else {
 		s.setNewAliveDead(id)
 	}
