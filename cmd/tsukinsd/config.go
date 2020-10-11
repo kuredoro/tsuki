@@ -12,19 +12,19 @@ type Config struct {
 }
 
 type Namenode struct {
-	Host              string
-	PublicPort        int
-	PrivatePort       int
-	TreeUpdatePeriod  int64
-	TreeLogName       string
-	TreeGobName       string
-	ChunkTableGobName string
-	SoftDeathTime     time.Duration
-	HardDeathTime     time.Duration
-	ChunkSize         int
-	Replicas          int
+	Host               string
+	PublicPort         int
+	PrivatePort        int
+	TreeUpdatePeriod   int64
+	TreeLogName        string
+	TreeGobName        string
+	ChunkTableGobName  string
+	SoftDeathTime      time.Duration
+	HardDeathTime      time.Duration
+	ChunkSize          int
+	Replicas           int
+	StoragePrivatePort int
 }
-
 
 type storage struct {
 	Host string
