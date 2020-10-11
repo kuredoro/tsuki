@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -27,6 +28,7 @@ type FileServerInfo struct {
 	NextAlive int
 	LastPulse time.Time
 	ID        int
+	Available int64
 }
 
 type PoolInfo struct {
@@ -44,18 +46,66 @@ func InitFServers(conf *Config) *PoolInfo {
 		SoftPulseQueue: make(chan int, 1),
 		HardPulseQueue: make(chan int, 1),
 	}
-	for i, storageNode := range conf.Storage {
+	i := 0
+	for _, storageNode := range conf.Storage {
+		available, ok := ProbeFServer(storageNode.Host, conf.Namenode.StoragePrivatePort)
+		if !ok {
+			continue
+		}
+
 		storage.StorageNodes = append(storage.StorageNodes,
 			&FileServerInfo{
 				Host:      storageNode.Host,
 				Port:      conf.Namenode.StoragePrivatePort,
-				Alive:     false,
+				Alive:     true,
+				Status:    LIVE,
 				NextAlive: (i + 1) % len(conf.Storage),
 				ID:        i,
+				Available: available,
+				LastPulse: time.Now(),
 			})
+		i++
+	}
+
+	if len(storage.StorageNodes) < conf.Namenode.Replicas {
+		log.Fatal("Not enough servers. Please add more and restart or reduce the number of replicas (number of replicas <= number of FSs)")
+	} else {
+		storage.StorageNodes[len(storage.StorageNodes) - 1].NextAlive = 0
 	}
 
 	return &storage
+}
+
+func ProbeFServer(host string, port int) (int64, bool) {
+	log.Printf("Probing %s:%d", host, port)
+
+	//req, _ := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/expect/write?token=%s", host, port), nil)
+
+	// for testing
+	req, _ := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/probe?host=%s", "localhost", port, host), nil)
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+
+	if err != nil {
+		log.Printf("Probing %s:%d failed", host, port)
+		return 0, false
+	}
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	res := &struct {
+		Available int64 `json:"available"`
+	}{}
+	err = json.Unmarshal(body, &res)
+
+	if err != nil {
+		log.Printf("Probing %s:%d failed", host, port)
+		return 0, false
+	}
+
+	log.Printf("Probing %s:%d is successful; available: %d", host, port, res.Available)
+	return res.Available, true
 }
 
 func (s *PoolInfo) Select() *FileServerInfo {
@@ -212,7 +262,7 @@ func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 func (s *PoolInfo) PurgeChunks(id int, chunks []string) {
 	fs := s.StorageNodes[id]
 
-	jsonChunks, _ :=json.Marshal(chunks)
+	jsonChunks, _ := json.Marshal(chunks)
 
 	client := &http.Client{}
 

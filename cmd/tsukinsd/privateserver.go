@@ -93,16 +93,20 @@ func (s *PoolInfo) GetFSWithOldestPulse(soft bool) (int, time.Duration) {
 func pulse(w http.ResponseWriter, r *http.Request) {
 	//remoteHost := strings.Split(r.RemoteAddr, ":")[0]
 	remoteHost := r.Header.Get("addr")
+	unknown := true
 	for _, fs := range storages.StorageNodes {
 		if fs.Host == remoteHost {
 			log.Printf("Received heart beat from: %s", remoteHost)
 			fs.LastPulse = time.Now()
 			storages.HardPulseQueue <- fs.ID
 			storages.SoftPulseQueue <- fs.ID
+			unknown = false
 			break
 		}
 	}
-	log.Printf("Received heart beat from unknown host: %s", remoteHost)
+	if unknown {
+		log.Printf("Received heart beat from unknown host: %s", remoteHost)
+	}
 	w.WriteHeader(http.StatusOK)
 
 }
