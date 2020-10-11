@@ -131,6 +131,23 @@ func reupload(w http.ResponseWriter, r *http.Request) {
 	// todo
 }
 
+func rmfile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	address := r.URL.Query().Get("address")
+
+	file, err := t.RemoveFile(address)
+
+	if err != nil {
+		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
+		return
+	}
+	json.NewEncoder(w).Encode(&ClientMessage{Status: "OK", Message: "file successfully removed"})
+
+	// purge chunks
+	go ct.PurgeChunks(file.Chunks)
+}
+
 
 
 func StartPublicServer() {
@@ -142,6 +159,8 @@ func StartPublicServer() {
 	r.HandleFunc("/cd", cd).Methods("GET")
 	r.HandleFunc("/upload", upload).Methods("GET")
 	r.HandleFunc("/reupload", reupload).Methods("GET")
+	r.HandleFunc("/rmfile", rmfile).Methods("GET")
+
 
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", conf.Namenode.PublicPort), r))
 }
