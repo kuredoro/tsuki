@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 )
@@ -294,6 +295,15 @@ func (s *FileServer) ProbeHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    log.Print("Probed")
+
+    // TODO: inject this functionality and test it.
+    save, err := os.Create(".tsukifs")
+    if err == nil {
+        fmt.Fprint(save, r.RemoteAddr)
+        save.Close()
+    }
+
     s.nsConn.SetNSAddr(r.RemoteAddr)
 
     info := s.GenerateProbeInfo()
@@ -304,8 +314,8 @@ func (s *FileServer) ProbeHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    fmt.Fprint(w, string(probeBytes))
     w.WriteHeader(http.StatusOK)
+    fmt.Fprint(w, string(probeBytes))
 }
 
 func (s *FileServer) GenerateProbeInfo() *FSProbeInfo {
