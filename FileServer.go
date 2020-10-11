@@ -112,6 +112,7 @@ func NewFileServer(store ChunkDB, nsConn NSConnector) (s *FileServer) {
     innerRouter.Handle("/cancelToken", http.HandlerFunc(s.CancelTokenHandler))
     innerRouter.Handle("/purge", http.HandlerFunc(s.PurgeHandler))
     innerRouter.Handle("/probe", http.HandlerFunc(s.ProbeHandler))
+    innerRouter.Handle("/replicate", http.HandlerFunc(s.ReplicateHandler))
 
     s.innerHandler = innerRouter
 
@@ -316,6 +317,40 @@ func (s *FileServer) ProbeHandler(w http.ResponseWriter, r *http.Request) {
 
     w.WriteHeader(http.StatusOK)
     fmt.Fprint(w, string(probeBytes))
+}
+
+func (s *FileServer) ReplicateHandler(w http.ResponseWriter, r *http.Request) {
+    token := r.URL.Query().Get("token")
+    destIP := r.URL.Query().Get("ip")
+
+    // TODO: remove copypasta
+    buf := &bytes.Buffer{}
+    io.Copy(buf, r.Body)
+
+    var chunks []string
+    if err := json.Unmarshal(buf.Bytes(), &chunks); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        return
+    }
+
+    for _, id := range chunks {
+        s.Expect(token, ExpectActionRead, id)
+
+        chunk, closeChunk, err := s.chunks.Get(id)
+        defer closeChunk()
+
+        if err != nil {
+            w.WriteHeader(http.StatusBadRequest)
+            return
+        }
+
+        destAddr := fmt.Sprintf("http://%s/chunk/%s?token=%s", destIP, id, token)
+        http.Post(destAddr, "application/octet-stream", chunk)
+
+        s.fullfilExpectation(token, id)
+    }
+
+    w.WriteHeader(http.StatusOK)
 }
 
 func (s *FileServer) GenerateProbeInfo() *FSProbeInfo {
