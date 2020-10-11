@@ -111,7 +111,7 @@ func NewPostChunkRequest(id, content, token string) *http.Request {
     return request
 }
 
-func NewExpectRequest(action, token string, chunks []string) *http.Request {
+func NewExpectRequest(action, token string, chunks ...string) *http.Request {
     b, _ := json.Marshal(chunks)
     url := fmt.Sprintf("/expect/%s?action=%s", token, action)
     req, _ := http.NewRequest(http.MethodGet, url, bytes.NewBuffer(b))

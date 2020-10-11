@@ -223,7 +223,7 @@ func TestFS_ReceiveExpect(t *testing.T) {
     batch1 := []string{ "a", "b", "c" }
     want := tsuki.ExpectActionRead
 
-    request := tsuki.NewExpectRequest("read", token, batch1)
+    request := tsuki.NewExpectRequest("read", token, batch1...)
     response := httptest.NewRecorder()
 
     fsd.ServeInner(response, request)
@@ -238,7 +238,7 @@ func TestFS_ReceiveExpect(t *testing.T) {
 
     batch2 := []string{ "b", "c", "d" }
 
-    request = tsuki.NewExpectRequest("write", token, batch2)
+    request = tsuki.NewExpectRequest("write", token, batch2...)
     response = httptest.NewRecorder()
 
     fsd.ServeInner(response, request)
@@ -265,7 +265,7 @@ func TestFS_CancelExpect(t *testing.T) {
 
     // Send WRITE expect for token
     batch := []string{"1", "2", "3", "4"}
-    request := tsuki.NewExpectRequest("write", token, batch)
+    request := tsuki.NewExpectRequest("write", token, batch...)
     response := httptest.NewRecorder()
 
     fsd.ServeInner(response, request)
@@ -322,6 +322,47 @@ func TestFS_ChunkPurge(t *testing.T) {
         time.Sleep(5 * time.Millisecond)
 
         tsuki.AssertChunkDoesntExists(t, store, "0")
+    })
+
+    t.Run("purge expected by 2 clients chunk",
+    func (t *testing.T) {
+        chunkId := "1"
+        chunkText := store.Index[chunkId]
+        token1 := "abc"
+        token2 := "xyz"
+
+        fsd.Expect(token1, tsuki.ExpectActionRead, chunkId)
+        fsd.Expect(token2, tsuki.ExpectActionRead, chunkId)
+
+        request := tsuki.NewPurgeRequest(chunkId)
+        response := httptest.NewRecorder()
+
+        fsd.ServeInner(response, request)
+
+        // It doesn't delete it until we fulfill expectation
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+        tsuki.AssertChunkContents(t, store, chunkId, chunkText)
+
+        request = tsuki.NewGetChunkRequest(chunkId, token1)
+        response = httptest.NewRecorder()
+
+        fsd.ServeClient(response, request)
+
+        // Still not deleting it...
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+        tsuki.AssertChunkContents(t, store, chunkId, chunkText)
+
+        request = tsuki.NewGetChunkRequest(chunkId, token2)
+        response = httptest.NewRecorder()
+
+        fsd.ServeClient(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+
+        time.Sleep(5 * time.Millisecond)
+
+        // Now delete
+        tsuki.AssertChunkDoesntExists(t, store, chunkId)
     })
 
         /*
