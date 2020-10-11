@@ -57,18 +57,18 @@ func NewHeart(pollAddr string, sleepFor time.Duration) *Heart {
 func (h *Heart) Poll(count int) {
     if count != -1 {
         for i := 0; i < count; i++ {
-            h.contract()
+            h.Contract()
         }
 
         return
     }
 
     for {
-        h.contract()
+        h.Contract()
     }
 }
 
-func (h *Heart) contract() {
+func (h *Heart) Contract() {
     h.Poller.Poll()
     h.Sleeper.Sleep()
 }
