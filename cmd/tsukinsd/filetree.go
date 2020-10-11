@@ -24,6 +24,8 @@ type Node struct {
 	Childs []*Node
 	Parent string
 	Removed bool
+	Pending map[string]bool
+	Chunks []string
 }
 
 func InitTree(conf Namenode) *Tree {
@@ -38,35 +40,37 @@ func (t *Tree) String() string {
 }
 
 func (node *Node) String() string {
-	return fmt.Sprintf("Node{Address: %q, IsDirectory: %v, Childs: %v, Parent: %q, Removed: %v}", node.Address, node.IsDirectory, node.Childs, node.Parent, node.Removed)
+	return fmt.Sprintf("Node{Address: %q, IsDirectory: %v, Childs: %v, Parent: %q, Removed: %v, Chunks: %v}", node.Address, node.IsDirectory, node.Childs, node.Parent, node.Removed, node.Chunks)
 }
 
-func (t *Tree) CreateFile(fileName string) error {
+func (t *Tree) CreateFile(fileName string) (*Node, error) {
 	fileName, matched := CleanAddress(fileName)
 
 	if !matched {
-		return fmt.Errorf("wrong file name format")
+		return nil, fmt.Errorf("wrong file name format")
 	}
 
 	_, fileExists := t.Nodes[fileName]
 
 	if fileExists {
-		return fmt.Errorf("The file already exists")
+		return nil, fmt.Errorf("The file already exists")
 	}
 
 
 	dirPath := path.Dir(fileName)
-	dir, dirExists := t.Nodes[dirPath]
+	dirExists := t.DirectoryExists(dirPath)
 
 	if !dirExists {
-		return fmt.Errorf("The directory does not exist")
+		return nil, fmt.Errorf("The directory does not exist")
 	}
+	dir, _ := t.GetNodeByAddress(dirPath)
 
 	newFile := &Node{
 		Address: fileName,
 		IsDirectory: false,
 		Childs: nil,
 		Parent: dir.Address,
+		Pending: map[string]bool{},
 	}
 
 	dir.Childs = append(dir.Childs, newFile)
@@ -74,7 +78,7 @@ func (t *Tree) CreateFile(fileName string) error {
 
 	t.CommitUpdate("touch", fileName)
 
-	return nil
+	return newFile, nil
 }
 
 func (t *Tree) RemoveFile(address string) error {
@@ -256,9 +260,12 @@ func (t *Tree) LS(address string) ([]string, error) {
 	}
 
 	dir, _ := t.GetNodeByAddress(address)
-	var list []string
+	var list = []string{}
 
 	for _, node := range dir.Childs {
+		if len(node.Pending) > 0 {
+			continue
+		}
 		name := path.Base(node.Address)
 		if node.IsDirectory {
 			name += "/"
@@ -403,9 +410,11 @@ func PrintDir(depth int, dir *Node) {
 }
 
 func CleanAddress(address string) (string, bool) {
-	matched, _ := regexp.Match("[a-zA-Z_\\-.0-9/]+", []byte(address))
+	matched, _ := regexp.MatchString(`[a-zA-Z0-9/_\-.]+`, address)
 
 	cleaned := path.Clean(address)
+
+	//fmt.Printf("Matched: %s, %v\n", address, matched)
 
 	if cleaned[0] == '/' {
 		cleaned = cleaned[1:]
