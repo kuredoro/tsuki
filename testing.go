@@ -8,30 +8,70 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 type InMemoryChunkStorage struct {
     Index map[string]string
+    mu sync.RWMutex
+    accessCount sync.WaitGroup
+    atLeastOneCall chan struct{}
+    callsPerformed int
+}
+
+func NewInMemoryChunkStorage(index map[string]string) *InMemoryChunkStorage {
+    return &InMemoryChunkStorage {
+        Index: index,
+        atLeastOneCall: make(chan struct{}),
+    }
+}
+
+func (s *InMemoryChunkStorage) breakBarrier() {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    if s.callsPerformed == 0 {
+        close(s.atLeastOneCall)
+        s.callsPerformed++
+    }
 }
 
 func (s *InMemoryChunkStorage) Get(id string) (io.Reader, func(), error) {
-    chunk, exists := s.Index[id]
+    s.breakBarrier()
 
-    if !exists {
+    if !s.Exists(id) {
         return nil, func(){}, ErrChunkNotFound
     }
 
+    s.accessCount.Add(1)
+
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    chunk := s.Index[id]
+
     buf := bytes.NewBufferString(chunk)
 
-    return buf, func(){}, nil
+    closeFunc := func() {
+        s.accessCount.Done()
+    }
+
+    return buf, closeFunc, nil
 }
 
 func (s *InMemoryChunkStorage) Create(id string) (io.Writer, func(), error) {
+    s.breakBarrier()
+
     if s.Exists(id) {
         return nil, func(){}, ErrChunkExists
     }
+
+    s.accessCount.Add(1)
+
+    s.mu.Lock()
+    defer s.mu.Unlock()
 
     s.Index[id] = ""
 
@@ -41,19 +81,40 @@ func (s *InMemoryChunkStorage) Create(id string) (io.Writer, func(), error) {
         str := &strings.Builder{}
         io.Copy(str, buf)
         s.Index[id] = str.String()
+
+        s.accessCount.Done()
     }
 
     return buf, writeChunk, nil
 }
 
 func (s *InMemoryChunkStorage) Exists(id string) (exists bool) {
+    s.accessCount.Add(1)
+    defer s.accessCount.Done()
+
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
     _, exists = s.Index[id]
     return
 }
 
 func (s *InMemoryChunkStorage) Remove(id string) error {
+    s.breakBarrier()
+
+    s.accessCount.Add(1)
+    defer s.accessCount.Done()
+
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
     delete(s.Index, id)
     return nil
+}
+
+func (s *InMemoryChunkStorage) Wait() {
+    <-s.atLeastOneCall
+    s.accessCount.Wait()
 }
 
 func NewGetChunkRequest(id, token string) *http.Request {
@@ -77,6 +138,13 @@ func NewExpectRequest(method, token string, chunks []string) *http.Request {
 func NewCancelTokenRequest(token string) *http.Request {
     url := fmt.Sprintf("/cancelToken?token=%s", token)
     req, _ := http.NewRequest(http.MethodPost, url, nil)
+    return req
+}
+
+func NewPurgeRequest(chunks ...string) *http.Request {
+    b, _ := json.Marshal(chunks)
+    url := "/purge"
+    req, _ := http.NewRequest(http.MethodGet, url, bytes.NewBuffer(b))
     return req
 }
 

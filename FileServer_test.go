@@ -4,17 +4,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kureduro/tsuki"
 )
 
 func TestFS_ChunkSend(t *testing.T) {
-    store := &tsuki.InMemoryChunkStorage{
-        Index: map[string]string {
+    store := tsuki.NewInMemoryChunkStorage(
+        map[string]string {
             "0" : "Hello",
             "1" : "world",
-        },
-    }
+    })
 
     nsConn := &tsuki.SpyNSConnector{}
 
@@ -109,12 +109,11 @@ func TestFS_ChunkSend(t *testing.T) {
 }
 
 func TestFS_ChunkReceive(t *testing.T) {
-    store := &tsuki.InMemoryChunkStorage {
-        Index : map[string]string {
+    store := tsuki.NewInMemoryChunkStorage(
+        map[string]string {
             "0" : "abcde",
             "1" : "xyzw",
-        },
-    }
+    })
 
     nsConn := &tsuki.SpyNSConnector{}
 
@@ -180,7 +179,7 @@ func TestFS_ChunkReceive(t *testing.T) {
         tsuki.AssertReceivedChunkCalls(t, nsConn)
     })
 
-    t.Run("upload expected, but registered chunk 1",
+    t.Run("upload expected, but already present chunk 1",
     func (t *testing.T) {
         nsConn.Reset()
         chunkId := "1"
@@ -199,12 +198,11 @@ func TestFS_ChunkReceive(t *testing.T) {
 }
 
 func TestFS_ReceiveExpect(t *testing.T) {
-    store := &tsuki.InMemoryChunkStorage {
-        Index: map[string]string {
+    store := tsuki.NewInMemoryChunkStorage(
+        map[string]string {
             "0": "abracadabra",
             "1": "watashihanekodesuka",
-        },
-    }
+    })
 
     nsConn := &tsuki.SpyNSConnector{}
 
@@ -245,9 +243,9 @@ func TestFS_ReceiveExpect(t *testing.T) {
 }
 
 func TestFS_CancelExpect(t *testing.T) {
-    store := &tsuki.InMemoryChunkStorage {
-        Index: make(map[string]string),
-    }
+    store := tsuki.NewInMemoryChunkStorage(
+        make(map[string]string),
+    )
 
     nsConn := &tsuki.SpyNSConnector{}
 
@@ -289,4 +287,56 @@ func TestFS_CancelExpect(t *testing.T) {
     fsd.ServeClient(response, request)
 
     tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
+}
+
+func TestFS_ChunkPurge(t *testing.T) {
+    store := tsuki.NewInMemoryChunkStorage(
+        map[string]string {
+            "0": "chunk0",
+            "1": "isnotchunk1",
+    })
+
+    nsConn := &tsuki.SpyNSConnector{}
+
+    fsd := tsuki.NewFileServer(store, nsConn)
+
+    t.Run("purge chunk not in use",
+    func (t *testing.T) {
+        request := tsuki.NewPurgeRequest("0")
+        response := httptest.NewRecorder()
+
+        fsd.ServeInner(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+
+        store.Wait()
+
+        tsuki.AssertChunkDoesntExists(t, store, "0")
+    })
+
+    t.Run("purge chunk in use",
+    func (t *testing.T) {
+        barrier := make(chan struct{})
+
+        go func() {
+            close(barrier)
+            _, closeChunk, _ := store.Get("1")
+            defer closeChunk()
+            time.Sleep(1 * time.Millisecond)
+        }()
+
+        <-barrier
+
+        request := tsuki.NewPurgeRequest("1")
+        response := httptest.NewRecorder()
+
+        fsd.ServeInner(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+        tsuki.AssertChunkContents(t, store, "1", "isnotchunk1")
+
+        store.Wait()
+
+        tsuki.AssertChunkDoesntExists(t, store, "1")
+    })
 }
