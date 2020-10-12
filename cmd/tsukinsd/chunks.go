@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"os"
+	"sync"
 )
 
 const (
@@ -25,18 +26,19 @@ type Chunk struct {
 }
 
 type ChunkTable struct {
+	ivmu          sync.Mutex
 	Table         map[string]*Chunk
 	InvertedTable map[string][]*Chunk // node hostname -> []*Chunk
 }
 
 func (ct *ChunkTable) AddChunk(chunkID string, file string, initNode *FileServerInfo) (*Chunk, bool) {
 	chunk := Chunk{
-		ChunkID:       chunkID,
-		File:          file,
-		FServers:      map[string]*FileServerInfo{initNode.Host: initNode},
-		Status:        PENDING,
-		Statuses:      map[string]int{initNode.Host: PENDING},
-		AllReplicas:   1,
+		ChunkID:     chunkID,
+		File:        file,
+		FServers:    map[string]*FileServerInfo{initNode.Host: initNode},
+		Status:      PENDING,
+		Statuses:    map[string]int{initNode.Host: PENDING},
+		AllReplicas: 1,
 	}
 
 	ct.Table[chunkID] = &chunk

@@ -20,15 +20,16 @@ const (
 )
 
 type FileServerInfo struct {
-	mu        sync.Mutex
-	Host      string
-	Port      int
-	Alive     bool
-	Status    FSStatus
-	NextAlive int
-	LastPulse time.Time
-	ID        int
-	Available int64
+	mu         sync.Mutex
+	Host       string
+	PublicHost string
+	Port       int
+	Alive      bool
+	Status     FSStatus
+	NextAlive  int
+	LastPulse  time.Time
+	ID         int
+	Available  int64
 }
 
 type PoolInfo struct {
@@ -48,21 +49,22 @@ func InitFServers(conf *Config) *PoolInfo {
 	}
 	i := 0
 	for _, storageNode := range conf.Storage {
-		available, ok := ProbeFServer(storageNode.Host, conf.Namenode.StoragePrivatePort)
+		available, ok := ProbeFServer(storageNode.Host, conf.Namenode.FSPrivatePort)
 		if !ok {
 			continue
 		}
 
 		storage.StorageNodes = append(storage.StorageNodes,
 			&FileServerInfo{
-				Host:      storageNode.Host,
-				Port:      conf.Namenode.StoragePrivatePort,
-				Alive:     true,
-				Status:    LIVE,
-				NextAlive: (i + 1) % len(conf.Storage),
-				ID:        i,
-				Available: available,
-				LastPulse: time.Now(),
+				Host:       storageNode.Host,
+				PublicHost: storageNode.PublicHost,
+				Port:       conf.Namenode.FSPrivatePort,
+				Alive:      true,
+				Status:     LIVE,
+				NextAlive:  (i + 1) % len(conf.Storage),
+				ID:         i,
+				Available:  available,
+				LastPulse:  time.Now(),
 			})
 		i++
 	}
@@ -232,13 +234,15 @@ func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 	client := &http.Client{}
 	json := []byte(fmt.Sprintf("[%s]", chunk.ChunkID))
 
+	ct.ivmu.Lock()
 	ct.InvertedTable[receiver.Host] = append(ct.InvertedTable[receiver.Host], chunk)
+	ct.ivmu.Unlock()
 
 	token := generateToken()
 
 	req, _ := http.NewRequest(
 		"GET",
-		fmt.Sprintf("http://%s:%d/expect?token=%s&action=write", receiver.Host, conf.Namenode.StoragePrivatePort, token),
+		fmt.Sprintf("http://%s:%d/expect?token=%s&action=write", receiver.Host, conf.Namenode.FSPrivatePort, token),
 		bytes.NewBuffer(json))
 	req.Header.Set("Content-Type", "application/json")
 	_, err := client.Do(req)
@@ -250,7 +254,7 @@ func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 	req, _ = http.NewRequest(
 		"GET",
 		fmt.Sprintf("http://%s:%d/replicate?token=%s&ip=%s",
-			sender, conf.Namenode.StoragePrivatePort, token, fmt.Sprintf("%s:%d", receiver.Host, receiver.Port)),
+			sender, conf.Namenode.FSPrivatePort, token, fmt.Sprintf("%s:%d", receiver.Host, receiver.Port)),
 		bytes.NewBuffer(json))
 	req.Header.Set("Content-Type", "application/json")
 	_, err = client.Do(req)
@@ -289,47 +293,9 @@ func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 
 	if status == DEAD {
 		// start replication process
-		s.FSIsDown(node)
-	} else if prevStatus == DEAD && status == LIVE {
-		s.FSIsUp(node)
-	}
-
-}
-
-func (s *PoolInfo) FSIsDown(node *FileServerInfo) {
-	log.Printf("OMG, %s is down", node.Host)
-	chunks, ok := ct.InvertedTable[node.Host]
-	if !ok {
-		// nothing to do; no chunks on server
-		return
-	}
-
-	for _, chunk := range chunks {
-		switch chunk.Status {
-		case PENDING:
-			chunk.Status = DOWN
-			log.Fatal("Impossible to replicate. The file is dead now.")
-		case OBSOLETE, DOWN:
-			// nothing to do
-			continue
-		}
-
-		sender, _ := s.SelectAmong(chunk.FServers)
-		newFS := s.SelectSeveralExcept(chunk.FServers, 1)
-
-		if len(newFS) == 0 {
-			// very bad, no new server
-			// todo: put it to a queue
-			return
-		}
-		delete(chunk.FServers, node.Host)
-		chunk.ReadyReplicas -= 1
-		chunk.AllReplicas -= 1
-
-		chunk.AddFSToChunk(newFS[0])
-
-		log.Printf("OMG, %s is down; replicating %s from %s to %s", node.Host, chunk.ChunkID, sender.Host, newFS[0].Host)
-		go Replicate(chunk, sender.Host, newFS[0])
+		go s.FSIsDown(node)
+	} else if prevStatus == DEAD && status == PARTIALLY_DEAD {
+		go s.FSIsUp(node)
 	}
 
 }
@@ -343,7 +309,7 @@ func (s *PoolInfo) PurgeChunks(id int, chunks []string) {
 
 	req, _ := http.NewRequest(
 		"POST",
-		fmt.Sprintf("http://%s:%d/purge", fs.Host, conf.Namenode.StoragePrivatePort),
+		fmt.Sprintf("http://%s:%d/purge", fs.Host, conf.Namenode.FSPrivatePort),
 		bytes.NewBuffer(jsonChunks))
 
 	req.Header.Set("Content-Type", "application/json")
@@ -368,9 +334,54 @@ func (s *PoolInfo) NodeIsDead(id int) {
 
 }
 
-func (s *PoolInfo) FSIsUp(node *FileServerInfo) {
-	// for now just send clearAll command
+func (s *PoolInfo) FSIsDown(node *FileServerInfo) {
+	log.Printf("OMG, %s is down", node.Host)
 
+	ct.ivmu.Lock()
+	chunks, ok := ct.InvertedTable[node.Host]
+	ct.ivmu.Unlock()
+
+	if !ok {
+		// nothing to do; no chunks on server
+		return
+	}
+
+	for _, chunk := range chunks {
+		switch chunk.Status {
+		case PENDING:
+			chunk.Status = DOWN
+			log.Printf("Impossible to replicate. The file is dead now. Chunk: %v", chunk)
+			//log.Fatal("Impossible to replicate. The file is dead now.")
+		case OBSOLETE, DOWN:
+			// nothing to do
+			continue
+		}
+
+		sender, _ := s.SelectAmong(chunk.FServers)
+		newFS := s.SelectSeveralExcept(chunk.FServers, 1)
+
+		if len(newFS) == 0 {
+			// very bad, no new server
+			// todo: put it to a queue
+			return
+		}
+		delete(chunk.FServers, node.Host)
+		chunk.ReadyReplicas -= 1
+		chunk.AllReplicas -= 1
+
+		chunk.AddFSToChunk(newFS[0])
+
+		log.Printf("OMG, %s is down; replicating %s from %s to %s", node.Host, chunk.ChunkID, sender.Host, newFS[0].Host)
+		go Replicate(chunk, sender.Host, newFS[0])
+	}
+
+	// possible data race with replicate function
+	// will still work, since no one can send something to down fs
+	delete(ct.InvertedTable, node.Host)
+}
+
+func (s *PoolInfo) FSIsUp(node *FileServerInfo) {
 	log.Printf("FS %s became online; removing everything from it", node.Host)
 
+	// todo: reshuffle chunks
 }
