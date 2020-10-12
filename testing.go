@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"reflect"
 	"strings"
@@ -42,7 +41,6 @@ func (s *InMemoryChunkStorage) Get(id string) (io.Reader, func(), error) {
     buf := bytes.NewBufferString(chunk)
 
     closeFunc := func() {
-        log.Println("closed")
         s.accessCount.Done()
     }
 
@@ -134,6 +132,13 @@ func NewPurgeRequest(chunks ...string) *http.Request {
 func NewProbeRequest(remoteAddr string) *http.Request {
     req, _ := http.NewRequest(http.MethodGet, "/probe", nil)
     req.RemoteAddr = remoteAddr
+    return req
+}
+
+func NewReplicateRequest(addr, token string, chunks ...string) *http.Request {
+    b, _ := json.Marshal(chunks)
+    url := fmt.Sprintf("/replicate?addr=%s&token=%s", addr, token)
+    req, _ := http.NewRequest(http.MethodGet, url, bytes.NewBuffer(b))
     return req
 }
 

@@ -376,7 +376,7 @@ func (s *FileServer) ProbeHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *FileServer) ReplicateHandler(w http.ResponseWriter, r *http.Request) {
     token := r.URL.Query().Get("token")
-    destIP := r.URL.Query().Get("ip")
+    destIP := r.URL.Query().Get("addr")
 
     // TODO: remove copypasta
     buf := &bytes.Buffer{}
@@ -390,19 +390,31 @@ func (s *FileServer) ReplicateHandler(w http.ResponseWriter, r *http.Request) {
 
     for _, id := range chunks {
         s.Expect(token, ExpectActionRead, id)
+        defer s.fulfillExpectation(token, id)
 
         chunk, closeChunk, err := s.chunks.Get(id)
-        defer closeChunk()
 
         if err != nil {
             w.WriteHeader(http.StatusBadRequest)
             return
         }
+        defer closeChunk()
 
-        destAddr := fmt.Sprintf("http://%s/chunk/%s?token=%s", destIP, id, token)
-        http.Post(destAddr, "application/octet-stream", chunk)
 
-        s.fulfillExpectation(token, id)
+        destAddr := fmt.Sprintf("http://%s/chunks/%s?token=%s", destIP, id, token)
+        resp, err := http.Post(destAddr, "application/octet-stream", chunk)
+
+        if err != nil {
+            log.Printf("warning: could not replicate chunk to %s, %v.", destAddr, err)
+            continue
+        }
+        defer resp.Body.Close()
+
+        status := resp.StatusCode
+        if status != http.StatusOK {
+            log.Printf("warning: chunk replica was not accepted by %s, response status code: %d", 
+                        destAddr, status)
+        }
     }
 
     w.WriteHeader(http.StatusOK)
