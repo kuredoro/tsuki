@@ -1,10 +1,9 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
+	"encoding/gob"
 	"log"
-	"net/http"
+	"os"
 )
 
 type ChunkMessage struct {
@@ -20,27 +19,49 @@ type ClientMessage struct {
 	Chunks  []ChunkMessage `json:"chunks"`
 }
 
-func initTree(w http.ResponseWriter, r *http.Request) {
-	t = InitTree(conf.Namenode)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(&ClientMessage{Status: "OK", Message: "The tree is initialized"})
-}
-
-
-
-//func confirmChunk(w http.ResponseWriter, r *http.Request) {
-//	file :=
-//}
-
 var t *Tree
 var conf *Config
 var storages *PoolInfo
 var ct = &ChunkTable{
-	Table: map[string]*Chunk{}, // chunkID -> chunk
+	Table:         map[string]*Chunk{}, // chunkID -> chunk
 	InvertedTable: map[string][]*Chunk{},
 }
 
 var tokens = map[string][]*FileServerInfo{}
+
+func loadAll() {
+	file, _ := os.Open("t.gob")
+	defer file.Close()
+	decoder := gob.NewDecoder(file)
+	decoder.Decode(t)
+
+	file, _ = os.Open("st.gob")
+	defer file.Close()
+	decoder = gob.NewDecoder(file)
+	decoder.Decode(storages)
+
+	file, _ = os.Open("ct.gob")
+	defer file.Close()
+	decoder = gob.NewDecoder(file)
+	decoder.Decode(ct)
+}
+
+func saveAll() {
+	file, _ := os.Create("t.gob")
+	defer file.Close()
+	decoder := gob.NewEncoder(file)
+	decoder.Encode(t)
+
+	file, _ = os.Create("st.gob")
+	defer file.Close()
+	decoder = gob.NewEncoder(file)
+	decoder.Encode(storages)
+
+	file, _ = os.Create("ct.gob")
+	defer file.Close()
+	decoder = gob.NewEncoder(file)
+	decoder.Encode(ct)
+}
 
 func main() {
 	var err error
@@ -50,20 +71,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var sos = map[string][]string{}
-
-	fmt.Printf("\n%v\n", sos["cock"])
-
 	//t = LoadTree(conf.Namenode.TreeGobName)
 	t = InitTree(conf.Namenode)
 	storages = InitFServers(conf)
-	//go startPulse()
+	//loadAll()
+
 	go StartPrivateServer()
 	go storages.HeartbeatManager(true)
 	go storages.HeartbeatManager(false)
 	StartPublicServer()
-
-
-
-	//r.HandleFunc("/confirmChunk", confirmChunk).Methods("GET") // not forever
 }
