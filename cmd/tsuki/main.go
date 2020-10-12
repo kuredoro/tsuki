@@ -38,6 +38,7 @@ type ClientMessage struct {
 
 type NSClientConnector struct {
 	NSAddr string
+    chunkSize int
 }
 
 func UnmarshalNSResponse(response *http.Response) (msg *ClientMessage) {
@@ -53,17 +54,11 @@ func UnmarshalNSResponse(response *http.Response) (msg *ClientMessage) {
 	return
 }
 
-func (conn *NSClientConnector) GetNS(cmd, path string) (*http.Response, error) {
+func (conn *NSClientConnector) GetNS(cmd, path string) (*ClientMessage, error) {
 	addr := fmt.Sprintf("http://%s%s/%s?address=%s", conn.NSAddr, NSCLIENTPORT, cmd, path)
-	return http.Get(addr)
-}
 
-func (conn *NSClientConnector) Ls(path string) ([]string, error) {
-	log.Print("ls ", path)
-
-	resp, err := conn.GetNS("ls", path)
+	resp, err := http.Get(addr)
 	if err != nil {
-		log.Printf("error: ls GET error, %v", err)
 		return nil, fmt.Errorf("send request: %v", err)
 	}
 
@@ -73,11 +68,107 @@ func (conn *NSClientConnector) Ls(path string) ([]string, error) {
 		return nil, fmt.Errorf(msg.Message)
 	}
 
+	return msg, nil
+}
+
+func (conn *NSClientConnector) GetNSUpload(path string, size int64) (*ClientMessage, error) {
+	addr := fmt.Sprintf("http://%s%s/upload?address=%s&size=%d", conn.NSAddr, NSCLIENTPORT, path, size)
+
+	resp, err := http.Get(addr)
+	if err != nil {
+        return nil, fmt.Errorf("send request: %v", err)
+	}
+
+	msg := UnmarshalNSResponse(resp)
+
+	if msg.Status != http.StatusOK {
+		return nil, fmt.Errorf(msg.Message)
+	}
+
+	return msg, nil
+}
+
+func (conn *NSClientConnector) GetChunkSize() (int, error) {
+	addr := fmt.Sprintf("http://%s%s/getChunkSize", conn.NSAddr, NSCLIENTPORT)
+
+	resp, err := http.Get(addr)
+	if err != nil {
+		return 0, fmt.Errorf("send chunk size request: %v", err)
+	}
+
+    buf := &bytes.Buffer{}
+    io.Copy(buf, resp.Body)
+
+    var size int
+    if err := json.Unmarshal(buf.Bytes(), &size); err != nil {
+        return 0, fmt.Errorf("unmarshal chunk size response: %v\nbody: %q", err, buf)
+    }
+
+    log.Println(buf)
+
+	return size, nil
+}
+
+func (conn *NSClientConnector) Ls(path string) ([]string, error) {
+	msg, err := conn.GetNS("ls", path)
+    if err != nil {
+        return nil, fmt.Errorf("ls: %v", err)
+    }
+
 	log.Printf("Received message: %#v", msg)
 
 	return msg.Objects, nil
 }
 
+func (conn *NSClientConnector) Touch(path string) error {
+	msg, err := conn.GetNS("touch", path)
+	if err != nil {
+		return fmt.Errorf("touch: %v", err)
+	}
+
+	log.Printf("Received message: %#v", msg)
+
+	return nil
+}
+
+func (conn *NSClientConnector) writeChunkToFS(addr, chunkId, token string, src io.Reader) error {
+    fsAddr := fmt.Sprintf("http://%s/chunks/%s?token=%s", addr, chunkId, token)
+    resp, err := http.Post(fsAddr, "application/octet-stream", src)
+    if err != nil {
+        return fmt.Errorf("send chunk: %v", err)
+    }
+
+    if resp.StatusCode != http.StatusOK {
+        return fmt.Errorf("send chunk: %d %s", resp.StatusCode, resp.Status)
+    }
+
+    return nil
+}
+
+func (conn *NSClientConnector) Upload(file io.Reader, destPath string, fileSize int64) error {
+    var err error
+    if conn.chunkSize == 0 {
+        conn.chunkSize, err = conn.GetChunkSize()
+        if err != nil {
+            return fmt.Errorf("upload init: %v", err)
+        }
+    }
+
+    msg, err := conn.GetNSUpload(destPath, fileSize)
+    if err != nil {
+        return fmt.Errorf("upload: %v", err)
+    }
+
+    for i, meta := range msg.Chunks {
+        chunkSrc := io.LimitReader(file, int64(conn.chunkSize))
+        conn.writeChunkToFS(meta.StorageIP, meta.ChunkID, msg.Token, chunkSrc)
+        fmt.Printf("Sent chunk #%d to %s\n", i, meta.StorageIP)
+    }
+
+	log.Printf("Received message: %#v", msg)
+
+	return nil
+}
 
 func saveCwd() {
 }
@@ -148,18 +239,81 @@ func main() {
                 Usage: "List directory",
                 Action: func(c *cli.Context) error {
 
-                    path := c.Args().First()
-                    if path == "" {
-                        path = cwd
+                    dir := c.Args().First()
+                    if dir == "" {
+                        dir = cwd
                     }
 
-                    objects, err := conn.Ls("/")
+                    objects, err := conn.Ls(dir)
                     if err != nil {
-                        return fmt.Errorf("%v", err)
+                        return fmt.Errorf("error: %v", err)
                     }
 
                     for _, obj := range objects {
                         fmt.Println(obj)
+                    }
+
+                    return nil
+                },
+            },
+            {
+                Name: "touch",
+                Usage: "Create empty file",
+                Action: func(c *cli.Context) error {
+                    if c.Args().Len() != 1 {
+                        return fmt.Errorf("error: only provide path to the file")
+                    }
+
+                    dir := c.Args().First()
+                    if dir[0] != '/' {
+                        dir = path.Join(cwd, dir)
+                    }
+
+                    err := conn.Touch(dir)
+                    if err != nil {
+                        return fmt.Errorf("error: %v", err)
+                    }
+
+                    return nil
+                },
+            },
+            {
+                Name: "upload",
+                Usage: "Upload file from local storage",
+                Action: func(c *cli.Context) error {
+                    if c.Args().Len() != 2 {
+                        return fmt.Errorf("error: provide local and remote paths to the file")
+                    }
+
+                    localWd, err := os.Getwd()
+                    if err != nil {
+                        panic(err)
+                    }
+
+                    localPath := c.Args().Get(0)
+                    if localPath[0] != '/' {
+                        localPath = path.Join(localWd, localPath)
+                    }
+
+                    remotePath := c.Args().Get(1)
+                    if remotePath[0] != '/' {
+                        remotePath = path.Join(cwd, remotePath)
+                    }
+
+                    file, err := os.Open(localPath)
+                    if err != nil {
+                        return fmt.Errorf("upload: %v", err)
+                    }
+                    defer file.Close()
+
+                    stat, err := file.Stat()
+                    if err != nil {
+                        return fmt.Errorf("upload: %v", err)
+                    }
+
+                    err = conn.Upload(file, remotePath, stat.Size())
+                    if err != nil {
+                        return fmt.Errorf("error: %v", err)
                     }
 
                     return nil
@@ -172,39 +326,4 @@ func main() {
 	if err != nil {
 		fmt.Println(err)
 	}
-
-    /*
-	scanner := bufio.NewScanner(os.Stdin)
-	for {
-		fmt.Printf("%s $ ", curPath)
-
-		scanner.Scan()
-
-		cmd := strings.Split(scanner.Text(), " ")
-
-		if len(cmd) == 0 {
-			continue
-		}
-
-		switch cmd[0] {
-		case "ls":
-			lsDir := curPath
-			if len(cmd) == 2 {
-				lsDir = path.Clean(cmd[1])
-			}
-
-			objects, err := conn.Ls(lsDir)
-			if err != nil {
-				fmt.Printf("error: %v\n", err)
-				continue
-			}
-
-			fmt.Println(strings.Join(objects, "\n"))
-		case "exit", "quit":
-			return
-		default:
-			fmt.Printf("error: unknown command %q\n", cmd[0])
-		}
-	}
-    */
 }
