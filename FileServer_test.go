@@ -229,7 +229,7 @@ func TestFS_ReceiveExpect(t *testing.T) {
     request := tsuki.NewExpectRequest("read", token, batch1...)
     response := httptest.NewRecorder()
 
-    fsd.ServeInner(response, request)
+    fsd.ServeNS(response, request)
 
     tsuki.AssertStatus(t, response.Code, http.StatusOK)
     for _, id := range batch1 {
@@ -244,7 +244,7 @@ func TestFS_ReceiveExpect(t *testing.T) {
     request = tsuki.NewExpectRequest("write", token, batch2...)
     response = httptest.NewRecorder()
 
-    fsd.ServeInner(response, request)
+    fsd.ServeNS(response, request)
 
     tsuki.AssertStatus(t, response.Code, http.StatusForbidden)
     for _, id := range batch1 {
@@ -271,7 +271,7 @@ func TestFS_CancelExpect(t *testing.T) {
     request := tsuki.NewExpectRequest("write", token, batch...)
     response := httptest.NewRecorder()
 
-    fsd.ServeInner(response, request)
+    fsd.ServeNS(response, request)
 
     // WRITE chunks
     request = tsuki.NewPostChunkRequest("1", "chunk1", token)
@@ -286,7 +286,7 @@ func TestFS_CancelExpect(t *testing.T) {
     request = tsuki.NewCancelTokenRequest(token)
     response = httptest.NewRecorder()
 
-    fsd.ServeInner(response, request)
+    fsd.ServeNS(response, request)
 
     tsuki.AssertStatus(t, response.Code, http.StatusOK)
 
@@ -320,7 +320,7 @@ func TestFS_ChunkPurge(t *testing.T) {
         request := tsuki.NewPurgeRequest("0")
         response := httptest.NewRecorder()
 
-        fsd.ServeInner(response, request)
+        fsd.ServeNS(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
 
@@ -342,7 +342,7 @@ func TestFS_ChunkPurge(t *testing.T) {
         request := tsuki.NewPurgeRequest(chunkId)
         response := httptest.NewRecorder()
 
-        fsd.ServeInner(response, request)
+        fsd.ServeNS(response, request)
 
         time.Sleep(10 * time.Millisecond)
 
@@ -416,7 +416,7 @@ func TestFS_Probe(t *testing.T) {
     request := tsuki.NewProbeRequest("addr1")
     response := httptest.NewRecorder()
 
-    fsd.ServeInner(response, request)
+    fsd.ServeNS(response, request)
 
     tsuki.AssertStatus(t, response.Code, http.StatusOK)
 
@@ -444,7 +444,7 @@ func TestFS_Probe(t *testing.T) {
     request = tsuki.NewProbeRequest("addr2")
     response = httptest.NewRecorder()
 
-    fsd.ServeInner(response, request)
+    fsd.ServeNS(response, request)
 
     tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
 
@@ -455,9 +455,7 @@ func TestFS_Probe(t *testing.T) {
 
 // Integration test
 func TestFS_Replicate(t *testing.T) {
-    nsConn := &tsuki.SpyNSConnector {
-        Addr: "shit",
-    }
+    nsConn := &tsuki.SpyNSConnector {}
 
     const (
         chunk1 = "abc"
@@ -503,7 +501,7 @@ func TestFS_Replicate(t *testing.T) {
         request := tsuki.NewReplicateRequest(listenerDst.Addr().String(), token, chunk1)
         response := httptest.NewRecorder()
 
-        fsSrc.ServeInner(response, request)
+        fsSrc.ServeNS(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
         tsuki.AssertChunkContents(t, storeDst, chunk1, storeSrc.Index[chunk1])
@@ -520,12 +518,55 @@ func TestFS_Replicate(t *testing.T) {
         request := tsuki.NewReplicateRequest(listenerDst.Addr().String(), token, batch...)
         response := httptest.NewRecorder()
 
-        fsSrc.ServeInner(response, request)
+        fsSrc.ServeNS(response, request)
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
 
         for _, chunkId := range batch {
             tsuki.AssertChunkContents(t, storeDst, chunkId, storeSrc.Index[chunkId])
         }
+    })
+}
+
+func TestFS_ServeNSAccess(t *testing.T) {
+    store := tsuki.NewInMemoryChunkStorage(map[string]string{})
+    nsConn := &tsuki.SpyNSConnector {}
+    fsd := tsuki.NewFileServer(store, nsConn)
+
+    t.Run("authenticate non-api requests from any address before probing",
+    func (t *testing.T) {
+        request, _ := http.NewRequest("Get", "/", nil)
+        request.RemoteAddr = "second.addr"
+        response := httptest.NewRecorder()
+
+        fsd.ServeNS(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusNotFound)
+    })
+
+    request := tsuki.NewProbeRequest("first.addr")
+    response := httptest.NewRecorder()
+    fsd.ServeNS(response, request)
+
+    t.Run("authenticate non-api requests from NS address",
+    func (t *testing.T) {
+        request, _ := http.NewRequest("Get", "/", nil)
+        request.RemoteAddr = "first.addr"
+        response := httptest.NewRecorder()
+
+        fsd.ServeNS(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusNotFound)
+    })
+
+    t.Run("block non-api requests from non-NS address",
+    func (t *testing.T) {
+        request, _ := http.NewRequest("Get", "/", nil)
+        request.RemoteAddr = "second.addr"
+        response := httptest.NewRecorder()
+
+        fsd.ServeNS(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusUnauthorized)
     })
 }
