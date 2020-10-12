@@ -13,8 +13,9 @@ hardDeathTime = 10#180
 
 chunkSize = 2 # mb
 #heartBeatPort = 7001
-replicas = 4
-storagePrivatePort = 7001
+replicas = 2
+fsPublicPort = 7000
+fsPrivatePort = 7001
 
 #[[storage]]
 #host = 'localhost'
@@ -25,13 +26,16 @@ storagePrivatePort = 7001
 #port = 7001
 [[storage]]
 host = '10.0.0.1'
+publicHost = 'localhost1'
 [[storage]]
 host = '10.0.0.2'
+publicHOst = 'localhost2'
 [[storage]]
 host = '10.0.0.3'
-[[storage]]
-host = '10.0.0.4'
-[[storage]]
-host = '10.0.0.5'
-[[storage]]
-host = '10.0.0.6'
+publicHost = 'localhost3'
+#[[storage]]
+#host = '10.0.0.4'
+#[[storage]]
+#host = '10.0.0.5'
+#[[storage]]
+#host = '10.0.0.6'
