@@ -104,10 +104,10 @@ func upload(w http.ResponseWriter, r *http.Request) {
 		file.Chunks = append(file.Chunks, chunkID.String())
 		file.Pending[chunkID.String()] = true
 
-		ct.AddChunk(chunkID.String(), file.Address, storageNode)
+		chunk, _ :=ct.AddChunk(chunkID.String(), file.Address, storageNode)
 		fmt.Printf("%v\n", ct)
 		address := fmt.Sprintf("%s:%d", storageNode.Host, storageNode.Port)
-
+		ct.InvertedTable[storageNode.Host] = append(ct.InvertedTable[address], chunk)
 		inversed[address] = append(inversed[address], chunkID.String())
 	}
 
@@ -116,7 +116,7 @@ func upload(w http.ResponseWriter, r *http.Request) {
 	//fmt.Printf("%v\n", ct)
 	json.NewEncoder(w).Encode(&ClientMessage{Status: "OK", Message: "Go upload there", Chunks: chunks, Token: token})
 
-	go SendChunksToFS(inversed, token)
+	go ExpectChunksFromClient(inversed, token)
 	// requests to fs's /expect/write?token JSON {chunks: []int}
 	// confirmation from fs's /confirm?chunkID=<chunkID>
 	// or client says /fserror?token=<token> <- for now error on client
@@ -125,6 +125,48 @@ func upload(w http.ResponseWriter, r *http.Request) {
 
 	// everything is ok
 	// fs works like client now
+}
+
+func download(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	address := r.URL.Query().Get("address")
+	file, err := t.GetFile(address)
+
+	if err != nil {
+		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
+		return
+	}
+
+	chunks := file.Chunks
+	downloadChunks := []ChunkMessage{}
+
+	for _, chunkID := range chunks {
+		chunk, ok := ct.Table[chunkID]
+		if !ok {
+			json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: fmt.Sprintf("the file is broken; no chunk: %s", chunkID)})
+			return
+		}
+
+		ready := map[string]*FileServerInfo{}
+		for address, fs := range chunk.FServers {
+			if chunk.Statuses[address] == OK {
+				ready[address] = fs
+			}
+		}
+
+		fs, err := storages.SelectAmong(ready)
+
+		if err != nil {
+			// maybe set this file as corrupted?? but it should not happen
+			json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
+			return
+		}
+
+		downloadChunks = append(downloadChunks, ChunkMessage{ChunkID: chunkID, StorageIP: fs.Host})
+	}
+
+	json.NewEncoder(w).Encode(&ClientMessage{Status: "OK", Message: "go download there:", Chunks: downloadChunks})
 }
 
 func reupload(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +200,7 @@ func StartPublicServer() {
 	r.HandleFunc("/touch", touch).Methods("GET")
 	r.HandleFunc("/cd", cd).Methods("GET")
 	r.HandleFunc("/upload", upload).Methods("GET")
+	r.HandleFunc("/download", download).Methods("GET")
 	r.HandleFunc("/reupload", reupload).Methods("GET")
 	r.HandleFunc("/rmfile", rmfile).Methods("GET")
 
