@@ -283,6 +283,13 @@ func (s *FileServer) ExpectHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    mock := r.Header.Get("mock")
+    if mock == "mock" {
+        for _, id := range chunks {
+            s.nsConn.ReceivedChunk(id)
+        }
+    }
+
     err := s.Expect(token, action, chunks...)
     if err != nil {
         w.WriteHeader(http.StatusForbidden)
