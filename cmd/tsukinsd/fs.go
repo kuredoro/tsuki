@@ -263,11 +263,10 @@ func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 	node := s.StorageNodes[id]
 
-	node.mu.Lock()
 	prevState := node.Alive
+	prevStatus := node.GetStatus()
 	node.Status = status
 	node.Alive = status == LIVE
-	node.mu.Unlock()
 
 	changedState := node.Alive && !(prevState && node.Alive)
 
@@ -291,7 +290,10 @@ func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 	if status == DEAD {
 		// start replication process
 		s.FSIsDown(node)
+	} else if prevStatus == DEAD && status == LIVE {
+		s.FSIsUp(node)
 	}
+
 }
 
 func (s *PoolInfo) FSIsDown(node *FileServerInfo) {
@@ -363,5 +365,12 @@ func (fs *FileServerInfo) GetStatus() FSStatus {
 }
 
 func (s *PoolInfo) NodeIsDead(id int) {
+
+}
+
+func (s *PoolInfo) FSIsUp(node *FileServerInfo) {
+	// for now just send clearAll command
+
+	log.Printf("FS %s became online; removing everything from it", node.Host)
 
 }
