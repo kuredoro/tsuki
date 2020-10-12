@@ -111,6 +111,7 @@ func (t *Tree) RemoveFile(address string) (*Node, error) {
 		return nil, fmt.Errorf("/%s/ cannot remove directory; use rmdir instead", address)
 	}
 
+	removed := t.Nodes[address]
 	t.Nodes[address].Removed = true // lazy removing
 	t.Removed = append(t.Removed, t.Nodes[address])
 
@@ -118,7 +119,7 @@ func (t *Tree) RemoveFile(address string) (*Node, error) {
 
 	t.CommitUpdate("rmfile", address)
 
-	return t.Nodes[address], nil
+	return removed, nil
 }
 
 func (t *Tree) CreateDirectory(address string) error {
@@ -285,7 +286,7 @@ func (t *Tree) LS(address string) ([]string, error) {
 	var list = []string{}
 
 	for _, node := range dir.Childs {
-		if !t.Exists(node.Address) {
+		if !t.Exists(node.Address) || node.Removed {
 			continue
 		}
 		name := path.Base(node.Address)
