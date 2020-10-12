@@ -213,9 +213,9 @@ func ExpectChunksFromClient(inversed map[string][]string, token string) {
 	for host, chunks := range inversed {
 
 		jsonStr, _ := json.Marshal(chunks)
-		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/expect?token=%s&action=write", host, token), bytes.NewBuffer(jsonStr))
+		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/expect/%s?action=write", host, token), bytes.NewBuffer(jsonStr))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("mock", "mock")
+		//req.Header.Set("mock", "mock")
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
@@ -235,7 +235,7 @@ func ExpectChunksFromClient(inversed map[string][]string, token string) {
 
 func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 	client := &http.Client{}
-	json := []byte(fmt.Sprintf("[%s]", chunk.ChunkID))
+	json := []byte(fmt.Sprintf("[\"%s\"]", chunk.ChunkID))
 
 	ct.ivmu.Lock()
 	ct.InvertedTable[receiver.PrivateHost] = append(ct.InvertedTable[receiver.PrivateHost], chunk)
@@ -245,15 +245,20 @@ func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 
 	req, _ := http.NewRequest(
 		"GET",
-		fmt.Sprintf("http://%s:%d/expect?token=%s&action=write", receiver.PrivateHost, conf.Namenode.FSPrivatePort, token),
+		fmt.Sprintf("http://%s:%d/expect/%s?action=write", receiver.PrivateHost, conf.Namenode.FSPrivatePort, token),
 		bytes.NewBuffer(json))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("mock", "mock")
-	_, err := client.Do(req)
+	//req.Header.Set("mock", "mock")
+	resp, err := client.Do(req)
 	if err != nil {
+		fmt.Printf("%v\n", resp)
 		// cancel token (cancelToken)
 		return
 	}
+	fmt.Println("response Status:", resp.Status)
+	fmt.Println("response Headers:", resp.Header)
+	body, _ := ioutil.ReadAll(resp.Body)
+	fmt.Println("response Body:", string(body))
 
 	req, _ = http.NewRequest(
 		"GET",
@@ -261,8 +266,9 @@ func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 			sender, conf.Namenode.FSPrivatePort, token, fmt.Sprintf("%s:%d", receiver.PrivateHost, conf.Namenode.FSPublicPort)),
 		bytes.NewBuffer(json))
 	req.Header.Set("Content-Type", "application/json")
-	_, err = client.Do(req)
+	resp, err = client.Do(req)
 	if err != nil {
+		fmt.Printf("%v\n", resp)
 		// cancel token (cancelToken)
 		return
 	}

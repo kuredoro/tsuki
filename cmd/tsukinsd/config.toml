@@ -8,8 +8,8 @@ treeUpdatePeriod = 10
 treeLogName = 'tree.log'
 treeGobName = 'tree.gob'
 chunkTableGobName = 'chunks.gob'
-softDeathTime = 5#21
-hardDeathTime = 10#180
+softDeathTime = 10#21
+hardDeathTime = 20#180
 
 chunkSize = 2 # mb
 #heartBeatPort = 7001
@@ -23,7 +23,11 @@ host = '10.91.84.229'
 publicHost = '10.91.84.229'
 [[storage]]
 host = '10.91.81.59'
-publicHOst = '10.91.81.59'
+publicHost = '10.91.81.59'
+[[storage]]
+host = '10.91.90.77'
+publicHost = '10.91.90.77'
+
 #[[storage]]
 #host = '10.0.0.3'
 #publicHost = 'localhost3'
