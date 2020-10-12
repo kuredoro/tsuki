@@ -23,6 +23,7 @@ type Chunk struct {
 	Statuses      map[string]int
 	ReadyReplicas int
 	AllReplicas   int
+	ssmu          sync.Mutex
 }
 
 type ChunkTable struct {
@@ -35,9 +36,9 @@ func (ct *ChunkTable) AddChunk(chunkID string, file string, initNode *FileServer
 	chunk := Chunk{
 		ChunkID:     chunkID,
 		File:        file,
-		FServers:    map[string]*FileServerInfo{initNode.Host: initNode},
+		FServers:    map[string]*FileServerInfo{initNode.PrivateHost: initNode},
 		Status:      PENDING,
-		Statuses:    map[string]int{initNode.Host: PENDING},
+		Statuses:    map[string]int{initNode.PrivateHost: PENDING},
 		AllReplicas: 1,
 	}
 
@@ -47,8 +48,8 @@ func (ct *ChunkTable) AddChunk(chunkID string, file string, initNode *FileServer
 }
 
 func (c *Chunk) AddFSToChunk(fs *FileServerInfo) {
-	c.FServers[fs.Host] = fs
-	c.Statuses[fs.Host] = PENDING
+	c.FServers[fs.PrivateHost] = fs
+	c.Statuses[fs.PrivateHost] = PENDING
 	c.AllReplicas += 1
 }
 
@@ -98,4 +99,10 @@ func (ct *ChunkTable) String() string {
 
 func (c *Chunk) String() string {
 	return fmt.Sprintf("Chunk{ChunkID: %s, File: %s, FServers: %v, Status: %d}", c.ChunkID, c.File, c.FServers, c.Status)
+}
+
+func (c *Chunk) SetStatus(status int) {
+	c.ssmu.Lock()
+	defer c.ssmu.Unlock()
+	c.Status = status
 }

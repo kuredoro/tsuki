@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -20,16 +21,16 @@ const (
 )
 
 type FileServerInfo struct {
-	mu         sync.Mutex
-	Host       string
-	PublicHost string
-	Port       int
-	Alive      bool
-	Status     FSStatus
-	NextAlive  int
-	LastPulse  time.Time
-	ID         int
-	Available  int64
+	mu          sync.Mutex
+	PrivateHost string
+	PublicHost  string
+	Port        int
+	Alive       bool
+	Status      FSStatus
+	NextAlive   int
+	LastPulse   time.Time
+	ID          int
+	Available   int
 }
 
 type PoolInfo struct {
@@ -56,15 +57,15 @@ func InitFServers(conf *Config) *PoolInfo {
 
 		storage.StorageNodes = append(storage.StorageNodes,
 			&FileServerInfo{
-				Host:       storageNode.Host,
-				PublicHost: storageNode.PublicHost,
-				Port:       conf.Namenode.FSPrivatePort,
-				Alive:      true,
-				Status:     LIVE,
-				NextAlive:  (i + 1) % len(conf.Storage),
-				ID:         i,
-				Available:  available,
-				LastPulse:  time.Now(),
+				PrivateHost: storageNode.Host,
+				PublicHost:  storageNode.PublicHost,
+				Port:        conf.Namenode.FSPrivatePort,
+				Alive:       true,
+				Status:      LIVE,
+				NextAlive:   (i + 1) % len(conf.Storage),
+				ID:          i,
+				Available:   available,
+				LastPulse:   time.Now(),
 			})
 		i++
 	}
@@ -78,13 +79,13 @@ func InitFServers(conf *Config) *PoolInfo {
 	return &storage
 }
 
-func ProbeFServer(host string, port int) (int64, bool) {
+func ProbeFServer(host string, port int) (int, bool) {
 	log.Printf("Probing %s:%d", host, port)
 
 	//req, _ := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/expect/write?token=%s", host, port), nil)
 
 	// for testing
-	req, _ := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/probe?host=%s", "localhost", port, host), nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/probe", host, port), nil)
 
 	client := &http.Client{}
 
@@ -97,7 +98,7 @@ func ProbeFServer(host string, port int) (int64, bool) {
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	res := &struct {
-		Available int64 `json:"available"`
+		Available int `json:"available"`
 	}{}
 	err = json.Unmarshal(body, &res)
 
@@ -132,7 +133,7 @@ func (s *PoolInfo) SelectSeveralExcept(exceptMap map[string]*FileServerInfo, num
 	next := s.StorageNodes[s.Next]
 	start := next
 	for i := 0; i < num; {
-		if !next.Alive || exceptMap[next.Host] != nil {
+		if !next.Alive || exceptMap[next.PrivateHost] != nil {
 		} else {
 			selected = append(selected, next)
 			i++
@@ -211,8 +212,9 @@ func ExpectChunksFromClient(inversed map[string][]string, token string) {
 	for host, chunks := range inversed {
 
 		jsonStr, _ := json.Marshal(chunks)
-		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/expect/write?token=%s", host, token), bytes.NewBuffer(jsonStr))
+		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/expect?token=%s&action=write", host, token), bytes.NewBuffer(jsonStr))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("mock", "mock")
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
@@ -235,16 +237,17 @@ func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 	json := []byte(fmt.Sprintf("[%s]", chunk.ChunkID))
 
 	ct.ivmu.Lock()
-	ct.InvertedTable[receiver.Host] = append(ct.InvertedTable[receiver.Host], chunk)
+	ct.InvertedTable[receiver.PrivateHost] = append(ct.InvertedTable[receiver.PrivateHost], chunk)
 	ct.ivmu.Unlock()
 
 	token := generateToken()
 
 	req, _ := http.NewRequest(
 		"GET",
-		fmt.Sprintf("http://%s:%d/expect?token=%s&action=write", receiver.Host, conf.Namenode.FSPrivatePort, token),
+		fmt.Sprintf("http://%s:%d/expect?token=%s&action=write", receiver.PrivateHost, conf.Namenode.FSPrivatePort, token),
 		bytes.NewBuffer(json))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("mock", "mock")
 	_, err := client.Do(req)
 	if err != nil {
 		// cancel token (cancelToken)
@@ -254,7 +257,7 @@ func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 	req, _ = http.NewRequest(
 		"GET",
 		fmt.Sprintf("http://%s:%d/replicate?token=%s&ip=%s",
-			sender, conf.Namenode.FSPrivatePort, token, fmt.Sprintf("%s:%d", receiver.Host, receiver.Port)),
+			sender, conf.Namenode.FSPrivatePort, token, fmt.Sprintf("%s:%d", receiver.PrivateHost, receiver.Port)),
 		bytes.NewBuffer(json))
 	req.Header.Set("Content-Type", "application/json")
 	_, err = client.Do(req)
@@ -294,7 +297,7 @@ func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 	if status == DEAD {
 		// start replication process
 		go s.FSIsDown(node)
-	} else if prevStatus == DEAD && status == PARTIALLY_DEAD {
+	} else if prevStatus == DEAD && status == LIVE {
 		go s.FSIsUp(node)
 	}
 
@@ -309,7 +312,7 @@ func (s *PoolInfo) PurgeChunks(id int, chunks []string) {
 
 	req, _ := http.NewRequest(
 		"POST",
-		fmt.Sprintf("http://%s:%d/purge", fs.Host, conf.Namenode.FSPrivatePort),
+		fmt.Sprintf("http://%s:%d/purge", fs.PrivateHost, conf.Namenode.FSPrivatePort),
 		bytes.NewBuffer(jsonChunks))
 
 	req.Header.Set("Content-Type", "application/json")
@@ -335,10 +338,10 @@ func (s *PoolInfo) NodeIsDead(id int) {
 }
 
 func (s *PoolInfo) FSIsDown(node *FileServerInfo) {
-	log.Printf("OMG, %s is down", node.Host)
+	log.Printf("OMG, %s is down", node.PrivateHost)
 
 	ct.ivmu.Lock()
-	chunks, ok := ct.InvertedTable[node.Host]
+	chunks, ok := ct.InvertedTable[node.PrivateHost]
 	ct.ivmu.Unlock()
 
 	if !ok {
@@ -365,23 +368,47 @@ func (s *PoolInfo) FSIsDown(node *FileServerInfo) {
 			// todo: put it to a queue
 			return
 		}
-		delete(chunk.FServers, node.Host)
+		delete(chunk.FServers, node.PrivateHost)
 		chunk.ReadyReplicas -= 1
 		chunk.AllReplicas -= 1
 
 		chunk.AddFSToChunk(newFS[0])
 
-		log.Printf("OMG, %s is down; replicating %s from %s to %s", node.Host, chunk.ChunkID, sender.Host, newFS[0].Host)
-		go Replicate(chunk, sender.Host, newFS[0])
+		log.Printf("OMG, %s is down; replicating %s from %s to %s", node.PrivateHost, chunk.ChunkID, sender.PrivateHost, newFS[0].PrivateHost)
+		go Replicate(chunk, sender.PrivateHost, newFS[0])
 	}
 
 	// possible data race with replicate function
 	// will still work, since no one can send something to down fs
-	delete(ct.InvertedTable, node.Host)
+	delete(ct.InvertedTable, node.PrivateHost)
 }
 
 func (s *PoolInfo) FSIsUp(node *FileServerInfo) {
-	log.Printf("FS %s became online; removing everything from it", node.Host)
+	log.Printf("FS %s became online; removing everything from it", node.PrivateHost)
 
-	// todo: reshuffle chunks
+	alive := 0
+	for _, fs := range storages.StorageNodes {
+		if fs.Alive {
+			alive += 1
+		}
+	}
+
+	for _, chunk := range ct.Table {
+		if rand.Float32() > 1 / float32(alive) {
+			continue
+		}
+
+		sender, err := s.SelectAmong(chunk.FServers)
+		if err != nil {
+			chunk.SetStatus(DOWN)
+			continue
+		}
+		receiver := s.SelectSeveralExcept(chunk.FServers, 1)
+		if len(receiver) == 0 {
+			continue
+		}
+
+		log.Printf("FS %s became online; replicate %s from %s", node.PrivateHost, chunk.ChunkID, sender.PrivateHost)
+		go Replicate(chunk, sender.PrivateHost, receiver[1])
+	}
 }

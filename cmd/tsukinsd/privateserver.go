@@ -5,6 +5,7 @@ import (
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -26,14 +27,11 @@ func (s *PoolInfo) HeartbeatManager(soft bool) {
 	} else {
 		period = conf.Namenode.HardDeathTime * time.Second
 		deathStatus = DEAD
-		liveStatus = PARTIALLY_DEAD
+		liveStatus = LIVE
 		queue = s.HardPulseQueue
 	}
 
-	nextDead := -1
-
-	var deathTime = period
-
+	nextDead, deathTime := s.GetFSWithOldestPulse(soft)
 
 	for {
 		select {
@@ -91,11 +89,11 @@ func (s *PoolInfo) GetFSWithOldestPulse(soft bool) (int, time.Duration) {
 }
 
 func pulse(w http.ResponseWriter, r *http.Request) {
-	//remoteHost := strings.Split(r.RemoteAddr, ":")[0]
-	remoteHost := r.Header.Get("addr")
+	remoteHost := strings.Split(r.RemoteAddr, ":")[0]
+	//remoteHost := r.Header.Get("addr")
 	unknown := true
 	for _, fs := range storages.StorageNodes {
-		if fs.Host == remoteHost {
+		if fs.PrivateHost == remoteHost {
 			log.Printf("Received heart beat from: %s", remoteHost)
 			// race condition but it is ok
 			// last pulse is also used in GetFSWithOldestPulse() in different thread
@@ -117,8 +115,8 @@ func confirmChunk(w http.ResponseWriter, r *http.Request) {
 	// chunk is ready at r.RemoteAddr
 	// we can set it as ready on remote addr and start sending to other servers
 	chunkID := r.URL.Query().Get("chunkID")
-	remoteAddr := r.Header.Get("addr")
-	//remoteAddr := strings.Split(r.RemoteAddr, ":")[0]
+	//remoteAddr := r.Header.Get("addr")
+	remoteAddr := strings.Split(r.RemoteAddr, ":")[0]
 	log.Printf("Got ready chunk %s from %s", chunkID, remoteAddr)
 
 	chunk, ok := ct.Table[chunkID]
@@ -177,13 +175,19 @@ func printTree(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	t.PrintTreeStruct()
+	fmt.Printf("%v", ct.InvertedTable)
+}
+
+func save(w http.ResponseWriter, r *http.Request) {
+	saveAll()
 }
 
 func StartPrivateServer() {
-	r := mux.NewRouter()
+	r :=  mux.NewRouter()
 	r.HandleFunc("/pulse", pulse).Methods("GET", "POST")
-	r.HandleFunc("/confirm/chunk", confirmChunk).Methods("GET")
-	r.HandleFunc("/print", printTree).Methods("GET")
+	r.HandleFunc("/confirm/receivedChunk", confirmChunk).Methods("GET", "POST")
+	r.HandleFunc("/print", printTree).Methods("GET", "POST")
+	r.HandleFunc("/save", save).Methods("GET", "POST")
 
 	http.ListenAndServe(fmt.Sprintf("%s:%d", conf.Namenode.Host, conf.Namenode.PrivatePort), r)
 }
