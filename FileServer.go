@@ -46,13 +46,18 @@ type TokenExpectation struct {
 }
 
 type ExpectationDB struct {
-    index map[string]*TokenExpectation
     mu sync.RWMutex
+    index map[string]*TokenExpectation
+
+    expectsPerChunk map[string]int
+    purgeChunk map[string]struct{}
 }
 
 func NewExpectationDB() *ExpectationDB {
     return &ExpectationDB {
         index: make(map[string]*TokenExpectation),
+        expectsPerChunk: make(map[string]int),
+        purgeChunk: make(map[string]struct{}),
     }
 }
 
@@ -68,13 +73,58 @@ func (e *ExpectationDB) Set(token string, exp *TokenExpectation) {
     defer e.mu.Unlock()
 
     e.index[token] = exp
+
+    for k := range exp.processedChunks {
+        e.expectsPerChunk[k]++
+    }
 }
 
-func (e *ExpectationDB) Remove(token string) {
+func (e *ExpectationDB) Remove(token string) []string {
     e.mu.Lock()
     defer e.mu.Unlock()
 
+    toPurge := make([]string, 0, len(e.purgeChunk))
+    for id := range e.index[token].processedChunks {
+        e.expectsPerChunk[id]--
+
+        if e.expectsPerChunk[id] == 0 {
+            delete(e.expectsPerChunk, id)
+
+            _, obsolete := e.purgeChunk[id]
+            if obsolete {
+                toPurge = append(toPurge, id)
+                delete(e.purgeChunk, id)
+            }
+        }
+    }
+
     delete(e.index, token)
+
+    return toPurge
+}
+
+func (e *ExpectationDB) MakeObsolete(chunks ...string) (toPurge []string) {
+    e.mu.Lock()
+    defer e.mu.Unlock()
+
+    for _, id := range chunks {
+        expCount := e.expectsPerChunk[id]
+        if expCount == 0 {
+            // Note that there's no `id` in the e.purgeChunk if we've entered
+            // this if. The only way to make chunk obsolete is to call this 
+            // function. Hence, if MakeObsolete didn't remove it the first 
+            // call, there was at least one expect action associated with 
+            // this chunk. And because of this, the Remove will return it
+            // and clear e.purgeChunk.
+
+            toPurge = append(toPurge, id)
+            continue
+        }
+
+        e.purgeChunk[id] = struct{}{}
+    }
+
+    return
 }
 
 type FSProbeInfo struct {
@@ -85,9 +135,10 @@ type ChunkDB interface {
     Get(id string) (io.Reader, func(), error)
     Create(id string) (io.Writer, func(), error)
     Exists(id string) bool
+
     // Should be concurrency safe
     Remove(id string) error
-
+    
     BytesAvailable() int
 }
 
@@ -107,6 +158,7 @@ func NewFileServer(store ChunkDB, nsConn NSConnector) (s *FileServer) {
         nsConn: nsConn,
     }
 
+
     innerRouter := http.NewServeMux()
     innerRouter.Handle("/expect/", http.HandlerFunc(s.ExpectHandler))
     innerRouter.Handle("/cancelToken", http.HandlerFunc(s.CancelTokenHandler))
@@ -121,12 +173,12 @@ func NewFileServer(store ChunkDB, nsConn NSConnector) (s *FileServer) {
 
 func (s *FileServer) Expect(token string, action ExpectAction, chunks ...string) error {
     // TODO: timeout
-    e := s.expectations.Get(token)
-    if e != nil {
+    exp := s.expectations.Get(token)
+    if exp != nil {
         return fmt.Errorf("expect group already exists, token=%s", token)
     }
 
-    e = &TokenExpectation {
+    exp = &TokenExpectation {
         action: action,
         processedChunks: make(map[string]bool),
         pendingCount: len(chunks),
@@ -138,33 +190,37 @@ func (s *FileServer) Expect(token string, action ExpectAction, chunks ...string)
         if action == ExpectActionRead && !s.chunks.Exists(id) {
             return ErrChunkNotFound
         }
-        e.processedChunks[id] = false
+        exp.processedChunks[id] = false
     }
 
-    s.expectations.Set(token, e)
+    s.expectations.Set(token, exp)
 
     return nil
 }
 
-func (s *FileServer) fullfilExpectation(token, id string) {
+func (s *FileServer) fulfillExpectation(token, id string) {
     // Expects correct token and id
 
-    e := s.expectations.Get(token)
+    exp := s.expectations.Get(token)
 
-    e.mu.Lock()
-    defer e.mu.Unlock()
+    exp.mu.Lock()
+    defer exp.mu.Unlock()
 
-    _, chunkExists := e.processedChunks[id]
+    _, chunkExists := exp.processedChunks[id]
     if !chunkExists {
-        log.Printf("warning: attempt to fullfil expectation for wrong chunk. token=%s, chunk=%s", token, id)
+        log.Printf("warning: attempt to fulfill expectation for wrong chunk. token=%s, chunk=%s", token, id)
         return
     }
 
-    e.processedChunks[id] = true
-    e.pendingCount--
+    exp.processedChunks[id] = true
+    exp.pendingCount--
 
-    if e.pendingCount == 0 {
-        s.expectations.Remove(token)
+    if exp.pendingCount == 0 {
+        toPurge := s.expectations.Remove(token)
+
+        for _, id := range toPurge {
+            go s.chunks.Remove(id)
+        }
     }
 }
 
@@ -188,6 +244,7 @@ func (s *FileServer) GetTokenExpectationForChunk(token, id string) ExpectAction 
 func (s *FileServer) ServeInner(w http.ResponseWriter, r *http.Request) {
     log.Printf("ServeInner: %s", r.URL)
 
+    // TODO: Block non NS
     s.innerHandler.ServeHTTP(w, r)
 }
 
@@ -238,37 +295,34 @@ func (s *FileServer) CancelTokenHandler(w http.ResponseWriter, r *http.Request) 
         return
     }
 
-    e := s.expectations.Get(token)
-    if e == nil {
+    exp := s.expectations.Get(token)
+    if exp == nil {
         w.WriteHeader(http.StatusOK)
         return
     }
 
-    e.mu.Lock()
-    defer e.mu.Unlock()
+    exp.mu.Lock()
+    defer exp.mu.Unlock()
 
 
-    toUndo := make([]string, 0, len(e.processedChunks) - e.pendingCount)
-    for k, v := range e.processedChunks {
+    toUndo := make([]string, 0, len(exp.processedChunks) - exp.pendingCount)
+    for k, v := range exp.processedChunks {
         if v {
             toUndo = append(toUndo, k)
         }
     }
 
-    if e.action == ExpectActionWrite && len(toUndo) != 0 {
-        // Remove blocks
-        for _, id := range toUndo {
-            // TODO: Start go routines
-            err := s.chunks.Remove(id)
-            if err != nil {
-                log.Fatal(err)
-            }
-        }
+    var toPurge []string
+    if exp.action == ExpectActionWrite && len(toUndo) != 0 {
+        toPurge = s.expectations.MakeObsolete(toUndo...)
     }
 
-    e.action = ExpectActionNothing
+    exp.action = ExpectActionNothing
 
-    s.expectations.Remove(token)
+    toPurge = append(toPurge, s.expectations.Remove(token)...)
+    for _, id := range toPurge {
+        go s.chunks.Remove(id)
+    }
 
     w.WriteHeader(http.StatusOK)
 }
@@ -347,7 +401,7 @@ func (s *FileServer) ReplicateHandler(w http.ResponseWriter, r *http.Request) {
         destAddr := fmt.Sprintf("http://%s/chunk/%s?token=%s", destIP, id, token)
         http.Post(destAddr, "application/octet-stream", chunk)
 
-        s.fullfilExpectation(token, id)
+        s.fulfillExpectation(token, id)
     }
 
     w.WriteHeader(http.StatusOK)
@@ -380,7 +434,7 @@ func (s *FileServer) SendChunk(w http.ResponseWriter, r *http.Request, id, token
         w.WriteHeader(http.StatusUnauthorized)
         return
     }
-    defer s.fullfilExpectation(token, id)
+    defer s.fulfillExpectation(token, id)
 
     chunk, closeChunk, err := s.chunks.Get(id)
     defer closeChunk()
@@ -401,7 +455,7 @@ func (s *FileServer) ReceiveChunk(w http.ResponseWriter, r *http.Request, id, to
         w.WriteHeader(http.StatusUnauthorized)
         return
     }
-    defer s.fullfilExpectation(token, id)
+    defer s.fulfillExpectation(token, id)
 
     chunk, finishChunk, err := s.chunks.Create(id)
     defer finishChunk()
