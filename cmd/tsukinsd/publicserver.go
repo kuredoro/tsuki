@@ -99,7 +99,10 @@ func upload(w http.ResponseWriter, r *http.Request) {
 		//fmt.Printf("%s\n", chunkID.String())
 
 		storageNode := storages.Select()
-		chunks = append(chunks, ChunkMessage{ChunkID: chunkID.String(), StorageIP: storageNode.Host})
+		chunks = append(chunks,
+			ChunkMessage{
+			ChunkID: chunkID.String(),
+			StorageIP: fmt.Sprintf("%s:%d", storageNode.PublicHost, conf.Namenode.FSPublicPort)})
 
 		file.Chunks = append(file.Chunks, chunkID.String())
 		file.Pending[chunkID.String()] = true
@@ -107,7 +110,11 @@ func upload(w http.ResponseWriter, r *http.Request) {
 		chunk, _ :=ct.AddChunk(chunkID.String(), file.Address, storageNode)
 		fmt.Printf("%v\n", ct)
 		address := fmt.Sprintf("%s:%d", storageNode.Host, storageNode.Port)
-		ct.InvertedTable[storageNode.Host] = append(ct.InvertedTable[address], chunk)
+
+		ct.ivmu.Lock()
+		ct.InvertedTable[storageNode.Host] = append(ct.InvertedTable[storageNode.Host], chunk)
+		ct.ivmu.Unlock()
+
 		inversed[address] = append(inversed[address], chunkID.String())
 	}
 
@@ -163,7 +170,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		downloadChunks = append(downloadChunks, ChunkMessage{ChunkID: chunkID, StorageIP: fs.Host})
+		downloadChunks = append(downloadChunks, ChunkMessage{ChunkID: chunkID, StorageIP: fmt.Sprintf("%s:%d", fs.PublicHost, conf.Namenode.FSPublicPort)})
 	}
 
 	json.NewEncoder(w).Encode(&ClientMessage{Status: "OK", Message: "go download there:", Chunks: downloadChunks})

@@ -12,22 +12,24 @@ type Config struct {
 }
 
 type Namenode struct {
-	Host               string
-	PublicPort         int
-	PrivatePort        int
-	TreeUpdatePeriod   int64
-	TreeLogName        string
-	TreeGobName        string
-	ChunkTableGobName  string
-	SoftDeathTime      time.Duration
-	HardDeathTime      time.Duration
-	ChunkSize          int
-	Replicas           int
-	StoragePrivatePort int
+	Host              string
+	PublicPort        int
+	PrivatePort       int
+	TreeUpdatePeriod  int64
+	TreeLogName       string
+	TreeGobName       string
+	ChunkTableGobName string
+	SoftDeathTime     time.Duration
+	HardDeathTime     time.Duration
+	ChunkSize         int
+	Replicas          int
+	FSPublicPort      int
+	FSPrivatePort     int
 }
 
 type storage struct {
 	Host string
+	PublicHost string
 }
 
 func LoadConfig() (*Config, error) {
