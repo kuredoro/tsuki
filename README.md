@@ -86,17 +86,22 @@ The diagram above shows all the possible channels of communication in client-NS-
 Let us now go to the nameserver architecture. The main goal of the nameserver is to contain all the information about the current state of the file system. 
 #### Filetree
 The file system is logical and stored in the RAM as a hierarchical structure (a tree). The example is provided below:
+
 ![](https://i.imgur.com/XOjp1AR.png)
 
 #### Tree node
 In the tree, there can be two types of nodes: a file, which cannot have children, and the tree, which has children but no data (no chunks). In our code, the tree is organized as a hashmap from the full path (we call it path address) to the node itself. Each node has references to all its children and to its parent so knowing the address of one node we can traverse in tree easily.
 
 Let us look at the implementation of the node itself.
+
 ![](https://i.imgur.com/r07zeYo.png)
+
 Each tree node knows the general information about the file: its address, size, creation date, etc. Also, it has a small piece of information provided by the tree: its children and its parent. It also should contain information about whether it was removed or not, since we use lazy removing: just mark some node as removed and remove it from the hashmap but the node itself will stay in the tree structure and will be removed eventually. It is a very nice solution in case of some expensive operations like directory removing: just mark one directory as dead and return success to the client and only then it will work with the mess it created.
 
 The chunk structure is very simple.
+
 ![](https://i.imgur.com/sR4sWgl.png)
+
 Chunk always has a unique id. It is impossible that two chunks have the same ID so the UUID is used for their identification. It also contains the information to which file it belongs. Other information (in red) is about the status of the chunk. The general status may be **PENDING** (the file is just created but the client has not uploaded this chunk yet), **OK** (the client can download the file), **DOWN** (no server can provide this chunk; the file is **DEAD**) and **OBSOLETE** (a file to which this chunk belongs is removed). One of the tasks of the NS is to keep the number of OK replicas to be the same as the configuration number of replicas.
 
 #### Public communication service
