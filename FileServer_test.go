@@ -343,7 +343,7 @@ func TestFS_ChunkPurge(t *testing.T) {
 
         fsd.ServeInner(response, request)
 
-        time.Sleep(20 * time.Millisecond)
+        time.Sleep(10 * time.Millisecond)
 
         // It doesn't delete it until we fulfill expectation
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
@@ -365,7 +365,7 @@ func TestFS_ChunkPurge(t *testing.T) {
 
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
 
-        time.Sleep(20 * time.Millisecond)
+        time.Sleep(10 * time.Millisecond)
 
         // Now delete
         tsuki.AssertChunkDoesntExists(t, store, chunkId)
