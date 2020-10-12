@@ -289,6 +289,8 @@ func TestFS_CancelExpect(t *testing.T) {
 
     tsuki.AssertStatus(t, response.Code, http.StatusOK)
 
+    time.Sleep(10 * time.Millisecond)
+
     for _, id := range batch {
         tsuki.AssertChunkDoesntExists(t, store, id)
     }
@@ -340,6 +342,8 @@ func TestFS_ChunkPurge(t *testing.T) {
         response := httptest.NewRecorder()
 
         fsd.ServeInner(response, request)
+
+        time.Sleep(20 * time.Millisecond)
 
         // It doesn't delete it until we fulfill expectation
         tsuki.AssertStatus(t, response.Code, http.StatusOK)
