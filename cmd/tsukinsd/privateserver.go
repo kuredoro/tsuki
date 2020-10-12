@@ -120,6 +120,7 @@ func confirmChunk(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Got ready chunk %s from %s", chunkID, remoteAddr)
 
 	chunk, ok := ct.Table[chunkID]
+	chunk.Status = OK
 	if !ok {
 		// here send request to remove chunk since it does not exist on the ns
 		log.Printf("Chunk %s not found; skipping", chunkID)
@@ -134,6 +135,7 @@ func confirmChunk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chunk.Statuses[remoteAddr] = OK
+
 	file, ok := t.GetNodeByAddress(chunk.File)
 	if !ok {
 		log.Printf("File %s not found; skipping", chunk.File)
@@ -155,14 +157,12 @@ func confirmChunk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	remainingReplicas = Min(remainingReplicas, len(senders))
-	receivers := storages.SelectSeveralExcept(senders, remainingReplicas)
+	receivers := storages.SelectSeveralExceptArr(senders, remainingReplicas)
 
 	if len(receivers) == 0 && chunk.AllReplicas < conf.Namenode.Replicas {
 		log.Printf("Chunk %s cannot be replicated more, there is no free fs left", chunkID)
 		// todo: add to some queue that is subscribed to events when some fs are up
 	}
-
-	chunk.AllReplicas += len(receivers)
 
 	for i, receiver := range receivers {
 		go Replicate(chunk, senders[i], receiver)

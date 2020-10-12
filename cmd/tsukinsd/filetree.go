@@ -81,6 +81,22 @@ func (t *Tree) CreateFile(fileName string) (*Node, error) {
 	return newFile, nil
 }
 
+func (t *Tree) GetFile(address string) (*Node, error) {
+	address = path.Clean(address)
+
+	if !t.FileExists(address) {
+		return nil, fmt.Errorf("file does not exist")
+	}
+
+	node, ok := t.GetNodeByAddress(address)
+
+	if !ok {
+		return nil, fmt.Errorf("path does not exist")
+	}
+
+	return node, nil
+}
+
 func (t *Tree) RemoveFile(address string) (*Node, error) {
 	address, matched := CleanAddress(address)
 
@@ -263,7 +279,7 @@ func (t *Tree) LS(address string) ([]string, error) {
 	var list = []string{}
 
 	for _, node := range dir.Childs {
-		if len(node.Pending) > 0 {
+		if !t.Exists(node.Address) {
 			continue
 		}
 		name := path.Base(node.Address)
@@ -282,9 +298,14 @@ func (t *Tree) PathExists(address string) (exists bool, isDirectory bool) {
 	node, ok := t.Nodes[address]
 
 	if ok {
-		return ok && !t.Nodes[address].Removed && t.ParentsExist(node), t.Nodes[address].IsDirectory
+		return ok && len(node.Pending) == 0 && !t.Nodes[address].Removed && t.ParentsExist(node), t.Nodes[address].IsDirectory
 	}
 	return ok, false
+}
+
+func (t *Tree) Exists(address string) bool {
+	exists, _ := t.PathExists(address)
+	return exists
 }
 
 func (t *Tree) ParentsExist(node *Node) bool {

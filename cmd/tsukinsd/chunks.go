@@ -10,6 +10,7 @@ const (
 	PENDING  = 0
 	OK       = 1
 	OBSOLETE = 2
+	DOWN     = 3
 )
 
 type Chunk struct {
@@ -28,24 +29,25 @@ type ChunkTable struct {
 	InvertedTable map[string][]*Chunk // node hostname -> []*Chunk
 }
 
-func (ct *ChunkTable) AddChunk(chunkID string, file string, initNode *FileServerInfo) bool {
+func (ct *ChunkTable) AddChunk(chunkID string, file string, initNode *FileServerInfo) (*Chunk, bool) {
 	chunk := Chunk{
-		ChunkID:     chunkID,
-		File:        file,
-		FServers:    map[string]*FileServerInfo{initNode.Host: initNode},
-		Status:      PENDING,
-		Statuses:    map[string]int{initNode.Host: PENDING},
-		AllReplicas: 1,
+		ChunkID:       chunkID,
+		File:          file,
+		FServers:      map[string]*FileServerInfo{initNode.Host: initNode},
+		Status:        PENDING,
+		Statuses:      map[string]int{initNode.Host: PENDING},
+		AllReplicas:   1,
 	}
 
 	ct.Table[chunkID] = &chunk
 
-	return true
+	return &chunk, true
 }
 
 func (c *Chunk) AddFSToChunk(fs *FileServerInfo) {
 	c.FServers[fs.Host] = fs
 	c.Statuses[fs.Host] = PENDING
+	c.AllReplicas += 1
 }
 
 func (ct *ChunkTable) SaveChunkTable(saveTo string) bool {
