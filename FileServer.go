@@ -337,7 +337,8 @@ func (s *FileServer) PurgeHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    for _, id := range chunks {
+    toPurge := s.expectations.MakeObsolete(chunks...)
+    for _, id := range toPurge {
         go s.chunks.Remove(id)
     }
 
