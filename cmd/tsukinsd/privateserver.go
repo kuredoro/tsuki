@@ -94,7 +94,7 @@ func pulse(w http.ResponseWriter, r *http.Request) {
 	unknown := true
 	for _, fs := range storages.StorageNodes {
 		if fs.PrivateHost == remoteHost {
-			log.Printf("Received heart beat from: %s", remoteHost)
+			// log.Printf("Received heart beat from: %s", remoteHost)
 			// race condition but it is ok
 			// last pulse is also used in GetFSWithOldestPulse() in different thread
 			fs.LastPulse = time.Now()
