@@ -208,6 +208,10 @@ func rmfile(w http.ResponseWriter, r *http.Request) {
 }
 
 
+func getChunkSize(w http.ResponseWriter, r *http.Request) {
+	responseBody, _ := json.Marshal(map[string]int{"chunkSize": conf.Namenode.ChunkSize * 1024 * 1024})
+	w.Write(responseBody)
+}
 
 func StartPublicServer() {
 	r := mux.NewRouter()
