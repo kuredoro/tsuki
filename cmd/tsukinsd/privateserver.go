@@ -52,8 +52,8 @@ func (s *PoolInfo) HeartbeatManager(soft bool) {
 				nextDead, deathTime = s.GetFSWithOldestPulse(soft)
 			}
 		case <-time.After(deathTime):
-			log.Printf("sos %v\n", soft)
 			if nextDead == -1 {
+				//deathTime = period
 				continue
 			}
 
@@ -97,6 +97,8 @@ func pulse(w http.ResponseWriter, r *http.Request) {
 	for _, fs := range storages.StorageNodes {
 		if fs.Host == remoteHost {
 			log.Printf("Received heart beat from: %s", remoteHost)
+			// race condition but it is ok
+			// last pulse is also used in GetFSWithOldestPulse() in different thread
 			fs.LastPulse = time.Now()
 			storages.HardPulseQueue <- fs.ID
 			storages.SoftPulseQueue <- fs.ID
