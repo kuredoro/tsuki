@@ -241,8 +241,16 @@ func (s *FileServer) GetTokenExpectationForChunk(token, id string) ExpectAction 
     return e.action
 }
 
-func (s *FileServer) ServeInner(w http.ResponseWriter, r *http.Request) {
+func (s *FileServer) ServeNS(w http.ResponseWriter, r *http.Request) {
     log.Printf("ServeInner: %s", r.URL)
+
+    // If NS hasn't probed server, anybody can access NS API
+    // The address of NS should be stored on disk and loaded on startup
+    // to prevent this.
+    if !s.nsConn.IsNS(r.RemoteAddr) {
+        w.WriteHeader(http.StatusUnauthorized)
+        return
+    }
 
     // TODO: Block non NS
     s.innerHandler.ServeHTTP(w, r)
