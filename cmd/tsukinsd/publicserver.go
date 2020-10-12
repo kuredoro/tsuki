@@ -244,7 +244,7 @@ func info(w http.ResponseWriter, r *http.Request) {
 }
 
 func getChunkSize(w http.ResponseWriter, r *http.Request) {
-	responseBody, _ := json.Marshal(map[string]int{"chunkSize": conf.Namenode.ChunkSize * 1024 * 1024})
+	responseBody := []byte(strconv.Itoa(conf.Namenode.ChunkSize * 1024 * 1024))
 	w.Write(responseBody)
 }
 
