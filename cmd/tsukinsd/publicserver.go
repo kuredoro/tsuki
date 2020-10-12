@@ -11,6 +11,16 @@ import (
 	"strconv"
 )
 
+
+func initTree(w http.ResponseWriter, r *http.Request) {
+	t = InitTree(conf.Namenode)
+	storages = InitFServers(conf)
+	saveAll()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(&ClientMessage{Status: "OK", Message: fmt.Sprintf("The tree is initialized; available space: %.2f", )})
+}
+
 func ls(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	address := r.URL.Query().Get("address")
