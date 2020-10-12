@@ -88,6 +88,7 @@ func ProbeFServer(host string, port int) (int, bool) {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/probe", host, port), nil)
 
 	client := &http.Client{}
+	client.Timeout = time.Second * 4
 
 	resp, err := client.Do(req)
 
