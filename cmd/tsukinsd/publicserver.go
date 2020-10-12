@@ -43,7 +43,7 @@ func mkdir(w http.ResponseWriter, r *http.Request) {
 func touch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	address := r.URL.Query().Get("address")
-	_, err := t.CreateFile(address)
+	_, err := t.CreateFile(address, 0)
 	if err == nil {
 		json.NewEncoder(w).Encode(&ClientMessage{
 			Status:  "OK",
@@ -76,7 +76,7 @@ func upload(w http.ResponseWriter, r *http.Request) {
 	sizeStr := r.URL.Query().Get("size")
 	address := r.URL.Query().Get("address")
 
-	size, err := strconv.ParseInt(sizeStr, 10, 64)
+	size, err := strconv.ParseInt(sizeStr, 10, 32)
 
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -84,7 +84,7 @@ func upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, err := t.CreateFile(address)
+	file, err := t.CreateFile(address, int(size))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
@@ -207,6 +207,41 @@ func rmfile(w http.ResponseWriter, r *http.Request) {
 	go ct.PurgeChunks(file.Chunks)
 }
 
+func rmdir(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	address := r.URL.Query().Get("address")
+
+	dir, err := t.RemoveDirectory(address)
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(&ClientMessage{
+		Message: fmt.Sprintf("%s directory successfully removed", dir.Address),
+	})
+}
+
+func info(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	address := r.URL.Query().Get("address")
+
+	info, err := t.NodeInfo(address)
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(&ClientMessage{
+		Message: info,
+	})
+}
 
 func getChunkSize(w http.ResponseWriter, r *http.Request) {
 	responseBody, _ := json.Marshal(map[string]int{"chunkSize": conf.Namenode.ChunkSize * 1024 * 1024})
@@ -224,6 +259,9 @@ func StartPublicServer() {
 	r.HandleFunc("/download", download).Methods("GET")
 	r.HandleFunc("/reupload", reupload).Methods("GET")
 	r.HandleFunc("/rmfile", rmfile).Methods("GET")
+	r.HandleFunc("/rmdir", rmdir).Methods("GET")
+	r.HandleFunc("/info", info).Methods("GET")
+	r.HandleFunc("/getChunkSize", getChunkSize).Methods("GET")
 
 
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", conf.Namenode.PublicPort), r))

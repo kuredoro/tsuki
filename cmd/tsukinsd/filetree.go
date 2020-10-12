@@ -8,28 +8,30 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type Tree struct {
-	Nodes map[string]*Node
+	Nodes   map[string]*Node
 	Version int64
 	Removed []*Node
-	Conf Namenode
+	Conf    Namenode
 }
 
-
 type Node struct {
-	Address string
+	Address     string
 	IsDirectory bool
-	Childs []*Node
-	Parent string
-	Removed bool
-	Pending map[string]bool
-	Chunks []string
+	Childs      []*Node
+	Parent      string
+	Removed     bool
+	Pending     map[string]bool
+	Chunks      []string
+	CreatedOn   time.Time
+	Size        int
 }
 
 func InitTree(conf Namenode) *Tree {
-	root := &Node{Address: ".", IsDirectory: true, Childs: make([]*Node, 0), Parent: ""}
+	root := &Node{Address: ".", IsDirectory: true, Childs: make([]*Node, 0), Parent: "", CreatedOn: time.Now()}
 	tree := &Tree{Nodes: map[string]*Node{".": root}, Conf: conf}
 
 	return tree
@@ -43,7 +45,7 @@ func (node *Node) String() string {
 	return fmt.Sprintf("Node{Address: %q, IsDirectory: %v, Childs: %v, Parent: %q, Removed: %v, Chunks: %v}", node.Address, node.IsDirectory, node.Childs, node.Parent, node.Removed, node.Chunks)
 }
 
-func (t *Tree) CreateFile(fileName string) (*Node, error) {
+func (t *Tree) CreateFile(fileName string, size int) (*Node, error) {
 	fileName, matched := CleanAddress(fileName)
 
 	if !matched {
@@ -56,7 +58,6 @@ func (t *Tree) CreateFile(fileName string) (*Node, error) {
 		return nil, fmt.Errorf("/%s file already exists", fileName)
 	}
 
-
 	dirPath := path.Dir(fileName)
 	dirExists := t.DirectoryExists(dirPath)
 
@@ -66,11 +67,13 @@ func (t *Tree) CreateFile(fileName string) (*Node, error) {
 	dir, _ := t.GetNodeByAddress(dirPath)
 
 	newFile := &Node{
-		Address: fileName,
+		Address:     fileName,
 		IsDirectory: false,
-		Childs: nil,
-		Parent: dir.Address,
-		Pending: map[string]bool{},
+		Childs:      nil,
+		Parent:      dir.Address,
+		Pending:     map[string]bool{},
+		CreatedOn: time.Now(),
+		Size: size,
 	}
 
 	dir.Childs = append(dir.Childs, newFile)
@@ -112,8 +115,8 @@ func (t *Tree) RemoveFile(address string) (*Node, error) {
 	}
 
 	removed := t.Nodes[address]
-	t.Nodes[address].Removed = true // lazy removing
-	t.Removed = append(t.Removed, t.Nodes[address])
+	removed.Removed = true // lazy removing
+	t.Removed = append(t.Removed, removed)
 
 	delete(t.Nodes, address)
 
@@ -143,10 +146,11 @@ func (t *Tree) CreateDirectory(address string) error {
 	dir := t.Nodes[dirPath]
 
 	newDir := &Node{
-		Address: address,
+		Address:     address,
 		IsDirectory: true,
-		Childs: nil,
-		Parent: dir.Address,
+		Childs:      nil,
+		Parent:      dir.Address,
+		CreatedOn: time.Now(),
 	}
 
 	dir.Childs = append(dir.Childs, newDir)
@@ -157,14 +161,14 @@ func (t *Tree) CreateDirectory(address string) error {
 	return nil
 }
 
-func (t *Tree) RemoveDirectory(address string) error {
+func (t *Tree) RemoveDirectory(address string) (*Node, error) {
 	address, matched := CleanAddress(address)
 
 	if !matched {
-		return fmt.Errorf("wrong file name format")
+		return nil, fmt.Errorf("wrong file name format")
 	}
 	if !t.DirectoryExists(address) {
-		return fmt.Errorf("/%s/ directory does not exist", address)
+		return nil, fmt.Errorf("/%s/ directory does not exist", address)
 	}
 
 	node, _ := t.GetNodeByAddress(address)
@@ -174,11 +178,11 @@ func (t *Tree) RemoveDirectory(address string) error {
 
 	t.CommitUpdate("rmdir", address)
 
-	return nil
+	return node, nil
 }
 
 func (t *Tree) GetNodeByAddress(address string) (*Node, bool) {
-	address,_ = CleanAddress(address)
+	address, _ = CleanAddress(address)
 	node, ok := t.Nodes[address]
 
 	return node, ok
@@ -260,7 +264,6 @@ func (t *Tree) MoveFile(fileToMove string, moveTo string) error {
 
 	}
 
-
 	err := t.CopyFile(fileToMove, moveTo)
 
 	if err != nil {
@@ -298,7 +301,6 @@ func (t *Tree) LS(address string) ([]string, error) {
 
 	return list, nil
 }
-
 
 func (t *Tree) PathExists(address string) (exists bool, isDirectory bool) {
 	address, _ = CleanAddress(address)
@@ -345,12 +347,53 @@ func (t *Tree) DirectoryExists(address string) bool {
 	return exists && isDirectory
 }
 
-
 func (t *Tree) ParentNode(node *Node) *Node {
 	parentNode, _ := t.GetNodeByAddress(node.Parent)
 	return parentNode
 }
 
+func (t *Tree) NodeInfo(address string) (string, error) {
+	address, matched := CleanAddress(address)
+
+	if !matched {
+		return "", fmt.Errorf("/%s wrong path name format", address)
+	}
+
+	exists, _ := t.PathExists(address)
+
+	if !exists {
+		return "", fmt.Errorf("%s path does not exist", address)
+	}
+
+	node, _ := t.GetNodeByAddress(address)
+
+	chunksNum := len(node.Chunks)
+	isDirectory := "no"
+	if node.IsDirectory {
+		isDirectory = "yes"
+	}
+	size := node.Size
+	sizeKB := float32(node.Size) / 1024
+	sizeOnDFS := sizeKB * 2 + 1
+
+	return fmt.Sprintf(
+		"Base name: %s\n"+
+			"Full path: %s\n"+
+			"Created on: %s\n"+
+			"Directory: %v\n"+
+			"Number of chunks: %d\n"+
+			"File size: %d bytes (%.2f KB)\n"+
+			"Real size on dfs: ~%.2f KB",
+		path.Base(address),
+		"/" + node.Address,
+		node.CreatedOn.Format("2006-01-02 15:04:05"),
+		isDirectory,
+		chunksNum,
+		size,
+		sizeKB,
+		sizeOnDFS,
+	), nil
+}
 
 func (t *Tree) SaveTree(saveTo string) bool {
 	file, _ := os.Create(saveTo)
@@ -386,7 +429,7 @@ func (t *Tree) CommitUpdate(command string, args ...string) {
 
 	t.Version += 1
 
-	if t.Version % 100 == t.Conf.TreeUpdatePeriod {
+	if t.Version%100 == t.Conf.TreeUpdatePeriod {
 		t.ClearRemoved()
 		t.SaveTree(t.Conf.TreeGobName)
 
@@ -423,16 +466,16 @@ func (t *Tree) ClearRemoved() {
 }
 
 func PrintDir(depth int, dir *Node) {
-	fmt.Printf("%s├── %s\n", strings.Repeat("│   ", depth), path.Base(dir.Address) + "/")
+	fmt.Printf("%s├── %s\n", strings.Repeat("│   ", depth), path.Base(dir.Address)+"/")
 	for _, c := range dir.Childs {
 		if c.Removed {
 			continue
 		}
 
 		if c.IsDirectory {
-			PrintDir(depth + 1, c)
+			PrintDir(depth+1, c)
 		} else {
-			fmt.Printf("%s├── %s\n", strings.Repeat("│   ", depth + 1), path.Base(c.Address))
+			fmt.Printf("%s├── %s\n", strings.Repeat("│   ", depth+1), path.Base(c.Address))
 		}
 	}
 }
