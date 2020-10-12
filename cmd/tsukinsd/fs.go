@@ -256,8 +256,8 @@ func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 
 	req, _ = http.NewRequest(
 		"GET",
-		fmt.Sprintf("http://%s:%d/replicate?token=%s&ip=%s",
-			sender, conf.Namenode.FSPrivatePort, token, fmt.Sprintf("%s:%d", receiver.PrivateHost, receiver.Port)),
+		fmt.Sprintf("http://%s:%d/replicate?token=%s&addr=%s",
+			sender, conf.Namenode.FSPrivatePort, token, fmt.Sprintf("%s:%d", receiver.PrivateHost, conf.Namenode.FSPublicPort)),
 		bytes.NewBuffer(json))
 	req.Header.Set("Content-Type", "application/json")
 	_, err = client.Do(req)
