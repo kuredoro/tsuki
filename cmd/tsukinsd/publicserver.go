@@ -18,9 +18,10 @@ func ls(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		json.NewEncoder(w).Encode(&ClientMessage{
 			Status:  "OK",
-			Message: fmt.Sprintf("The content of %s", address),
+			Message: fmt.Sprintf("the content of %s", address),
 			Objects: list})
 	} else {
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
 	}
 }
@@ -32,8 +33,9 @@ func mkdir(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		json.NewEncoder(w).Encode(&ClientMessage{
 			Status:  "OK",
-			Message: fmt.Sprintf("%d %s directory successfullly created", t.Version, dirName)})
+			Message: fmt.Sprintf("%s directory successfully created", dirName)})
 	} else {
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
 	}
 }
@@ -45,8 +47,9 @@ func touch(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		json.NewEncoder(w).Encode(&ClientMessage{
 			Status:  "OK",
-			Message: fmt.Sprintf("%d %s file successfullly created", t.Version, address)})
+			Message: fmt.Sprintf("%s file successfully created", address)})
 	} else {
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
 	}
 }
@@ -62,6 +65,7 @@ func cd(w http.ResponseWriter, r *http.Request) {
 			Objects: []string{address},
 		})
 	} else {
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
 	}
 }
@@ -75,12 +79,14 @@ func upload(w http.ResponseWriter, r *http.Request) {
 	size, err := strconv.ParseInt(sizeStr, 10, 64)
 
 	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
 		return
 	}
 
 	file, err := t.CreateFile(address)
 	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
 		return
 	}
@@ -109,10 +115,10 @@ func upload(w http.ResponseWriter, r *http.Request) {
 
 		chunk, _ :=ct.AddChunk(chunkID.String(), file.Address, storageNode)
 		fmt.Printf("%v\n", ct)
-		address := fmt.Sprintf("%s:%d", storageNode.Host, storageNode.Port)
+		address := fmt.Sprintf("%s:%d", storageNode.PrivateHost, storageNode.Port)
 
 		ct.ivmu.Lock()
-		ct.InvertedTable[storageNode.Host] = append(ct.InvertedTable[storageNode.Host], chunk)
+		ct.InvertedTable[storageNode.PrivateHost] = append(ct.InvertedTable[storageNode.PrivateHost], chunk)
 		ct.ivmu.Unlock()
 
 		inversed[address] = append(inversed[address], chunkID.String())
@@ -141,6 +147,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 	file, err := t.GetFile(address)
 
 	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
 		return
 	}
@@ -151,6 +158,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 	for _, chunkID := range chunks {
 		chunk, ok := ct.Table[chunkID]
 		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: fmt.Sprintf("the file is broken; no chunk: %s", chunkID)})
 			return
 		}
@@ -166,6 +174,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			// maybe set this file as corrupted?? but it should not happen
+			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
 			return
 		}
@@ -188,6 +197,7 @@ func rmfile(w http.ResponseWriter, r *http.Request) {
 	file, err := t.RemoveFile(address)
 
 	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(&ClientMessage{Status: "ERR", Message: err.Error()})
 		return
 	}
