@@ -2,6 +2,7 @@ package tsuki_test
 
 import (
 	"encoding/json"
+    "net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -452,6 +453,79 @@ func TestFS_Probe(t *testing.T) {
     }
 }
 
+// Integration test
 func TestFS_Replicate(t *testing.T) {
-    // TODO: untested
+    nsConn := &tsuki.SpyNSConnector {
+        Addr: "shit",
+    }
+
+    const (
+        chunk1 = "abc"
+        chunk2 = "xyz"
+        chunk3 = "third"
+        token = "replicationToken"
+    )
+
+    storeSrc := tsuki.NewInMemoryChunkStorage(
+        map[string]string {
+            chunk1: "test test",
+            chunk2: "foo bar",
+            chunk3: "ansoehusnheosnhueosnahusenthsneohsnheuonsthueonshsneou",
+        },
+    )
+
+    fsSrc := tsuki.NewFileServer(storeSrc, nsConn)
+
+    storeDst := tsuki.NewInMemoryChunkStorage(
+        map[string]string {},
+    )
+
+    fsDst := tsuki.NewFileServer(storeDst, nsConn)
+
+    listenerDst, err := net.Listen("tcp", "localhost:0")
+    if err != nil {
+        panic(err)
+    }
+
+    go func() {
+        err := http.Serve(listenerDst, http.HandlerFunc(fsDst.ServeClient))
+        if err != nil {
+            panic(err)
+        }
+    }()
+
+    t.Run("replicate one chunk",
+    func (t *testing.T) {
+        // The destination should expect to write new chunk, just like for a client.
+        fsDst.Expect(token, tsuki.ExpectActionWrite, chunk1)
+
+        // Actual replicate request
+        request := tsuki.NewReplicateRequest(listenerDst.Addr().String(), token, chunk1)
+        response := httptest.NewRecorder()
+
+        fsSrc.ServeInner(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+        tsuki.AssertChunkContents(t, storeDst, chunk1, storeSrc.Index[chunk1])
+    })
+
+    t.Run("replicate a batch of chunks",
+    func (t *testing.T) {
+        batch := []string{ chunk2, chunk3 }
+
+        // The destination should expect to write new chunk, just like for a client.
+        fsDst.Expect(token, tsuki.ExpectActionWrite, batch...)
+
+        // Actual replicate request
+        request := tsuki.NewReplicateRequest(listenerDst.Addr().String(), token, batch...)
+        response := httptest.NewRecorder()
+
+        fsSrc.ServeInner(response, request)
+
+        tsuki.AssertStatus(t, response.Code, http.StatusOK)
+
+        for _, chunkId := range batch {
+            tsuki.AssertChunkContents(t, storeDst, chunkId, storeSrc.Index[chunkId])
+        }
+    })
 }
