@@ -20,3 +20,12 @@ func Min(x int, y int) int {
 		return y
 	}
 }
+
+func Abs(x int) int {
+	if x < 0 {
+		return -x
+	} else {
+		return x
+	}
+
+}

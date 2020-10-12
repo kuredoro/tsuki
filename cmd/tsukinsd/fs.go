@@ -70,7 +70,7 @@ func InitFServers(conf *Config) *PoolInfo {
 	if len(storage.StorageNodes) < conf.Namenode.Replicas {
 		log.Fatal("Not enough servers. Please add more and restart or reduce the number of replicas (number of replicas <= number of FSs)")
 	} else {
-		storage.StorageNodes[len(storage.StorageNodes) - 1].NextAlive = 0
+		storage.StorageNodes[len(storage.StorageNodes)-1].NextAlive = 0
 	}
 
 	return &storage
@@ -120,11 +120,7 @@ func (s *PoolInfo) Select() *FileServerInfo {
 	return next
 }
 
-func (s *PoolInfo) SelectSeveralExcept(except []string, num int) []*FileServerInfo {
-	exceptMap := map[string]int{}
-	for _, host := range except {
-		exceptMap[host] = 1
-	}
+func (s *PoolInfo) SelectSeveralExcept(exceptMap map[string]*FileServerInfo, num int) []*FileServerInfo {
 	//if s.Alive-len(except) < num {
 	//	num = s.Alive - len(except)
 	//}
@@ -134,7 +130,7 @@ func (s *PoolInfo) SelectSeveralExcept(except []string, num int) []*FileServerIn
 	next := s.StorageNodes[s.Next]
 	start := next
 	for i := 0; i < num; {
-		if !next.Alive || exceptMap[next.Host] == 1 {
+		if !next.Alive || exceptMap[next.Host] != nil {
 		} else {
 			selected = append(selected, next)
 			i++
@@ -147,6 +143,38 @@ func (s *PoolInfo) SelectSeveralExcept(except []string, num int) []*FileServerIn
 	}
 
 	return selected
+}
+
+func (s *PoolInfo) SelectSeveralExceptArr(except []string, num int) []*FileServerInfo {
+	exceptMap := map[string]*FileServerInfo{}
+	for _, host := range except {
+		exceptMap[host] = &FileServerInfo{}
+	}
+
+	return s.SelectSeveralExcept(exceptMap, num)
+}
+
+func (s *PoolInfo) SelectAmong(among map[string]*FileServerInfo) (*FileServerInfo, error) {
+	next := s.Next
+	var chosen *FileServerInfo
+
+	serNum := len(s.StorageNodes)
+	diff := 3 * serNum
+
+	for _, fs := range among {
+		if fs.Alive && Abs(fs.ID+serNum-next) < diff {
+			next := fs.ID
+			chosen = fs
+			diff = Abs(fs.ID - next)
+		}
+	}
+
+	if chosen == nil {
+		return nil, fmt.Errorf("no available server to select")
+	} else {
+		s.Next = chosen.NextAlive
+		return chosen, nil
+	}
 }
 
 func (s *PoolInfo) setNewAliveDead(nowDeadID int) {
@@ -177,8 +205,9 @@ func (s *PoolInfo) setNewAlive(newAliveID int, cur int) {
 	}
 }
 
-func SendChunksToFS(inversed map[string][]string, token string) {
+func ExpectChunksFromClient(inversed map[string][]string, token string) {
 	for host, chunks := range inversed {
+
 		jsonStr, _ := json.Marshal(chunks)
 		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/expect/write?token=%s", host, token), bytes.NewBuffer(jsonStr))
 		req.Header.Set("Content-Type", "application/json")
@@ -195,7 +224,6 @@ func SendChunksToFS(inversed map[string][]string, token string) {
 		body, _ := ioutil.ReadAll(resp.Body)
 		fmt.Println("response Body:", string(body))
 		resp.Body.Close()
-
 		// if any error here die
 	}
 }
@@ -203,6 +231,8 @@ func SendChunksToFS(inversed map[string][]string, token string) {
 func Replicate(chunk *Chunk, sender string, receiver *FileServerInfo) {
 	client := &http.Client{}
 	json := []byte(fmt.Sprintf("[%s]", chunk.ChunkID))
+
+	ct.InvertedTable[receiver.Host] = append(ct.InvertedTable[receiver.Host], chunk)
 
 	token := generateToken()
 
@@ -257,6 +287,49 @@ func (s *PoolInfo) ChangeStatus(id int, status FSStatus) {
 		}
 		s.setNewAliveDead(id)
 	}
+
+	if status == DEAD {
+		// start replication process
+		s.FSIsDown(node)
+	}
+}
+
+func (s *PoolInfo) FSIsDown(node *FileServerInfo) {
+	log.Printf("OMG, %s is down", node.Host)
+	chunks, ok := ct.InvertedTable[node.Host]
+	if !ok {
+		// nothing to do; no chunks on server
+		return
+	}
+
+	for _, chunk := range chunks {
+		switch chunk.Status {
+		case PENDING:
+			chunk.Status = DOWN
+			log.Fatal("Impossible to replicate. The file is dead now.")
+		case OBSOLETE, DOWN:
+			// nothing to do
+			continue
+		}
+
+		sender, _ := s.SelectAmong(chunk.FServers)
+		newFS := s.SelectSeveralExcept(chunk.FServers, 1)
+
+		if len(newFS) == 0 {
+			// very bad, no new server
+			// todo: put it to a queue
+			return
+		}
+		delete(chunk.FServers, node.Host)
+		chunk.ReadyReplicas -= 1
+		chunk.AllReplicas -= 1
+
+		chunk.AddFSToChunk(newFS[0])
+
+		log.Printf("OMG, %s is down; replicating %s from %s to %s", node.Host, chunk.ChunkID, sender.Host, newFS[0].Host)
+		go Replicate(chunk, sender.Host, newFS[0])
+	}
+
 }
 
 func (s *PoolInfo) PurgeChunks(id int, chunks []string) {
