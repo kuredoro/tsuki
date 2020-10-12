@@ -69,7 +69,7 @@ func main() {
 
     go func() {
         defer wg.Done()
-        if err := http.ListenAndServe(addrForInner, http.HandlerFunc(server.ServeInner)); err != nil {
+        if err := http.ListenAndServe(addrForInner, http.HandlerFunc(server.ServeNS)); err != nil {
             log.Fatalf("could not listen on %v, %v", addrForClients, err)
         }
     }()
