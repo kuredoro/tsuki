@@ -1,6 +1,6 @@
 [namenode]
 
-host = 'localhost'
+host = '10.91.90.77'
 publicPort = 7070
 privatePort = 7071
 
@@ -17,22 +17,16 @@ replicas = 2
 fsPublicPort = 7000
 fsPrivatePort = 7001
 
-#[[storage]]
-#host = 'localhost'
-#port = 7777
 
+[[storage]]
+host = '10.91.84.229'
+publicHost = '10.91.84.229'
+[[storage]]
+host = '10.91.81.59'
+publicHOst = '10.91.81.59'
 #[[storage]]
-#host = '127.0.0.1'
-#port = 7001
-[[storage]]
-host = '10.0.0.1'
-publicHost = 'localhost1'
-[[storage]]
-host = '10.0.0.2'
-publicHOst = 'localhost2'
-[[storage]]
-host = '10.0.0.3'
-publicHost = 'localhost3'
+#host = '10.0.0.3'
+#publicHost = 'localhost3'
 #[[storage]]
 #host = '10.0.0.4'
 #[[storage]]

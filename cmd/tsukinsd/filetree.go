@@ -53,7 +53,7 @@ func (t *Tree) CreateFile(fileName string) (*Node, error) {
 	_, fileExists := t.Nodes[fileName]
 
 	if fileExists {
-		return nil, fmt.Errorf("The file already exists")
+		return nil, fmt.Errorf("/%s file already exists", fileName)
 	}
 
 
@@ -61,7 +61,7 @@ func (t *Tree) CreateFile(fileName string) (*Node, error) {
 	dirExists := t.DirectoryExists(dirPath)
 
 	if !dirExists {
-		return nil, fmt.Errorf("The directory does not exist")
+		return nil, fmt.Errorf("/%s/ directory does not exist", dirPath)
 	}
 	dir, _ := t.GetNodeByAddress(dirPath)
 
@@ -85,13 +85,13 @@ func (t *Tree) GetFile(address string) (*Node, error) {
 	address = path.Clean(address)
 
 	if !t.FileExists(address) {
-		return nil, fmt.Errorf("file does not exist")
+		return nil, fmt.Errorf("/%s file does not exist", address)
 	}
 
 	node, ok := t.GetNodeByAddress(address)
 
 	if !ok {
-		return nil, fmt.Errorf("path does not exist")
+		return nil, fmt.Errorf("/%s path does not exist", address)
 	}
 
 	return node, nil
@@ -101,14 +101,14 @@ func (t *Tree) RemoveFile(address string) (*Node, error) {
 	address, matched := CleanAddress(address)
 
 	if !matched {
-		return nil, fmt.Errorf("wrong file name format")
+		return nil, fmt.Errorf("/%s wrong file name format", address)
 	}
 
 	exists, isDirectory := t.PathExists(address)
 	if !exists {
-		return nil, fmt.Errorf("file does not exist")
+		return nil, fmt.Errorf("/%s file does not exist", address)
 	} else if isDirectory {
-		return nil, fmt.Errorf("cannot remove directory")
+		return nil, fmt.Errorf("/%s/ cannot remove directory; use rmdir instead", address)
 	}
 
 	t.Nodes[address].Removed = true // lazy removing
@@ -118,7 +118,6 @@ func (t *Tree) RemoveFile(address string) (*Node, error) {
 
 	t.CommitUpdate("rmfile", address)
 
-
 	return t.Nodes[address], nil
 }
 
@@ -126,19 +125,19 @@ func (t *Tree) CreateDirectory(address string) error {
 	address, matched := CleanAddress(address)
 
 	if !matched {
-		return fmt.Errorf("wrong file name format")
+		return fmt.Errorf("/%s wrong file name format", address)
 	}
 
 	exists, _ := t.PathExists(address)
 
 	if exists {
-		return fmt.Errorf("the path already exists")
+		return fmt.Errorf("/%s the path already exists", address)
 	}
 
 	dirPath := path.Dir(address)
 	dirExists := t.DirectoryExists(dirPath)
 	if !dirExists {
-		return fmt.Errorf("the parent directory (%s) does not exist", dirPath)
+		return fmt.Errorf("/%s the parent directory (%s) does not exist", address, dirPath)
 	}
 	dir := t.Nodes[dirPath]
 
@@ -164,7 +163,7 @@ func (t *Tree) RemoveDirectory(address string) error {
 		return fmt.Errorf("wrong file name format")
 	}
 	if !t.DirectoryExists(address) {
-		return fmt.Errorf("directory does not exist")
+		return fmt.Errorf("/%s/ directory does not exist", address)
 	}
 
 	node, _ := t.GetNodeByAddress(address)
@@ -194,9 +193,9 @@ func (t *Tree) CD(address string) (string, error) {
 	exists, isDirectory := t.PathExists(address)
 
 	if !exists {
-		return "", fmt.Errorf("directory does not exist")
+		return "", fmt.Errorf("/%s/ directory does not exist", address)
 	} else if !isDirectory {
-		return "", fmt.Errorf("not a directory")
+		return "", fmt.Errorf("/%s not a directory", address)
 	}
 	return address, nil
 }
@@ -205,8 +204,11 @@ func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {
 	fileToCopy, fileToCopyMatched := CleanAddress(fileToCopy)
 	copyTo, copyToMatched := CleanAddress(copyTo)
 
-	if !fileToCopyMatched || !copyToMatched {
-		return fmt.Errorf("wrong file name format")
+	if !fileToCopyMatched {
+		return fmt.Errorf("/%s wrong file name format", fileToCopy)
+	}
+	if !copyToMatched {
+		return fmt.Errorf("/%s wrong file name format", copyTo)
 	}
 
 	var fullFilePath string
@@ -214,21 +216,21 @@ func (t *Tree) CopyFile(fileToCopy string, copyTo string) error {
 	fileToCopyExists, fileToCopyIsDirectory := t.PathExists(fileToCopy)
 
 	if !fileToCopyExists {
-		return fmt.Errorf("file does not exist")
+		return fmt.Errorf("/%s file does not exist", fileToCopy)
 	} else if fileToCopyIsDirectory {
-		return fmt.Errorf("cannot copy directory")
+		return fmt.Errorf("/%s/ cannot copy directory", fileToCopy)
 	}
 
 	if t.DirectoryExists(copyTo) {
 		fullFilePath = path.Join(copyTo, path.Base(fileToCopy))
 	} else if t.FileExists(copyTo) {
-		return fmt.Errorf("the file already exists")
+		return fmt.Errorf("%s the file already exists", fileToCopy)
 	} else {
 		fullFilePath = copyTo
 	}
 
 	if t.FileExists(fullFilePath) {
-		return fmt.Errorf("the file already exists")
+		return fmt.Errorf("/%s the file already exists", fullFilePath)
 	}
 
 	parentDir := t.Nodes[path.Dir(fullFilePath)]
@@ -249,15 +251,19 @@ func (t *Tree) MoveFile(fileToMove string, moveTo string) error {
 	fileToMove, fileToMoveMatched := CleanAddress(fileToMove)
 	moveTo, moveToMatched := CleanAddress(moveTo)
 
-	if !fileToMoveMatched || !moveToMatched {
-		return fmt.Errorf("wrong file name format")
+	if !fileToMoveMatched {
+		return fmt.Errorf("/%s wrong file name format", fileToMove)
+	}
+	if !moveToMatched {
+		return fmt.Errorf("/%s wrong file name format", moveTo)
+
 	}
 
 
 	err := t.CopyFile(fileToMove, moveTo)
 
 	if err != nil {
-		return fmt.Errorf("impossible to move file, %e", err)
+		return fmt.Errorf("impossible to move file: %e", err)
 	}
 
 	_, _ = t.RemoveFile(fileToMove)
@@ -269,10 +275,10 @@ func (t *Tree) LS(address string) ([]string, error) {
 	address, matched := CleanAddress(address)
 
 	if !matched {
-		return nil, fmt.Errorf("wrong file name format")
+		return nil, fmt.Errorf("/%s wrong file name format", address)
 	}
 	if !t.DirectoryExists(address) {
-		return nil, fmt.Errorf("directory does not exist")
+		return nil, fmt.Errorf("/%s directory does not exist", address)
 	}
 
 	dir, _ := t.GetNodeByAddress(address)
