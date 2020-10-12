@@ -143,6 +143,28 @@ func main() {
                     return nil
                 },
             },
+            {
+                Name: "ls",
+                Usage: "List directory",
+                Action: func(c *cli.Context) error {
+
+                    path := c.Args().First()
+                    if path == "" {
+                        path = cwd
+                    }
+
+                    objects, err := conn.Ls("/")
+                    if err != nil {
+                        return fmt.Errorf("%v", err)
+                    }
+
+                    for _, obj := range objects {
+                        fmt.Println(obj)
+                    }
+
+                    return nil
+                },
+            },
         },
 	}
 
