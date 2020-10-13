@@ -262,6 +262,7 @@ func (s *FileServer) ExpectHandler(w http.ResponseWriter, r *http.Request) {
 
     if !correct {
         w.WriteHeader(http.StatusBadRequest)
+        fmt.Fprint(w, "Not correct action")
         return
     }
 
@@ -271,6 +272,7 @@ func (s *FileServer) ExpectHandler(w http.ResponseWriter, r *http.Request) {
     // nothing follows it.
     if token == "" {
         w.WriteHeader(http.StatusBadRequest)
+        fmt.Fprint(w, "Token is empty")
         return
     }
 
@@ -280,6 +282,7 @@ func (s *FileServer) ExpectHandler(w http.ResponseWriter, r *http.Request) {
     var chunks []string
     if err := json.Unmarshal(buf.Bytes(), &chunks); err != nil {
         w.WriteHeader(http.StatusBadRequest)
+        fmt.Fprint(w, err)
         return
     }
 

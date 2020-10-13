@@ -1,10 +1,13 @@
 package tsuki
 
 import (
-    "fmt"
-    "net/http"
-    "log"
+	"fmt"
+	"log"
+	"net/http"
+	"strings"
 )
+
+const NSPORT = ":7071"
 
 type NSConnector interface {
     ReceivedChunk(id string)
@@ -19,6 +22,7 @@ type NSConnector interface {
 type HTTPNSConnector struct {
     Addr string
     httpAddr string
+    ip string
 }
 
 func (c *HTTPNSConnector) ReceivedChunk(id string) {
@@ -32,16 +36,32 @@ func (c *HTTPNSConnector) GetNSAddr() string {
 }
 
 func (c *HTTPNSConnector) SetNSAddr(addr string) {
-    c.Addr = addr
-    c.httpAddr = "http://" + addr
+    colon := strings.IndexRune(addr, ':')
+    if colon == -1 {
+        colon = len(addr)
+    }
+
+    c.ip = addr[:colon]
+
+    c.Addr = c.ip + NSPORT
+    c.httpAddr = "http://" + c.Addr
+
+    log.Printf("SetNSAddr: %#v", c)
 }
 
 func (c *HTTPNSConnector) IsNS(addr string) bool {
-    if c.Addr == "" {
+    if c.ip == "" {
         return true
     }
 
-    return c.Addr == addr
+    colon := strings.IndexRune(addr, ':')
+    if colon == -1 {
+        colon = len(addr)
+    }
+
+    ip := addr[:colon]
+
+    return c.ip == ip
 }
 
 func (c *HTTPNSConnector) Poll() {
